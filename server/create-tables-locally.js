@@ -59,8 +59,8 @@ export async function createTablesLocally(db) {
         CREATE TABLE IF NOT EXISTS user_sessions (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-          session_token VARCHAR(255) UNIQUE NOT NULL,
-          refresh_token VARCHAR(255) UNIQUE,
+          session_token TEXT UNIQUE NOT NULL,
+          refresh_token TEXT UNIQUE,
           ip_address INET,
           user_agent TEXT,
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -90,7 +90,7 @@ export async function createTablesLocally(db) {
         CREATE TABLE IF NOT EXISTS password_reset_tokens (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-          token VARCHAR(255) UNIQUE NOT NULL,
+          token TEXT UNIQUE NOT NULL,
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
           used_at TIMESTAMP WITH TIME ZONE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -117,7 +117,7 @@ export async function createTablesLocally(db) {
         CREATE TABLE IF NOT EXISTS email_verification_tokens (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-          token VARCHAR(255) UNIQUE NOT NULL,
+          token TEXT UNIQUE NOT NULL,
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
           verified_at TIMESTAMP WITH TIME ZONE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -302,7 +302,7 @@ export async function createTablesLocally(db) {
           inviter_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
           invitee_email VARCHAR(255) NOT NULL,
           invitee_id UUID REFERENCES users(id) ON DELETE SET NULL,
-          invitation_token VARCHAR(255) UNIQUE NOT NULL,
+          invitation_token TEXT UNIQUE NOT NULL,
           message TEXT,
           status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'expired')),
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,

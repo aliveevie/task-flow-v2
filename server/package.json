@@ -16,7 +16,8 @@
     "migrate": "node migrate-db.js",
     "migrate-local": "node migrate-local.js",
     "migrate-api": "node create-tables-api.js",
-    "migrate-http": "node execute-sql-http.js"
+    "migrate-http": "node execute-sql-http.js",
+    "fix-tokens": "node fix-token-columns.js"
   },
   "keywords": [],
   "author": "",
