@@ -1,0 +1,35 @@
+{
+  "name": "swift-work-board-server",
+  "version": "1.0.0",
+  "description": "Express server for Swift Work Board",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon --watch index.js",
+    "setup-db": "node setup-database.js",
+    "create-tables": "node create-tables-now.js",
+    "create-tables-admin": "node create-tables-admin.js",
+    "create-all-tables": "node migrations/create-all-tables.js",
+    "check-tables": "node check-tables.js",
+    "show-sql": "node create-tables-direct.js",
+    "migrate": "node migrate-db.js",
+    "migrate-local": "node migrate-local.js",
+    "migrate-api": "node create-tables-api.js",
+    "migrate-http": "node execute-sql-http.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.78.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^7.0.10",
+    "pg": "^8.16.3"
+  }
+}
