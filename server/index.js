@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import emailService from './mails/emailService.js';
+import { createTablesLocally } from './create-tables-locally.js';
 
 const { Client } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +34,76 @@ let dbConnected = false;
 
 // Initialize email service
 let emailReady = false;
+
+// Function to create all database tables if they don't exist
+async function createAllTablesIfNotExist() {
+  if (!db || !dbConnected) {
+    return false;
+  }
+
+  try {
+    // Check which tables exist
+    const existingTables = await db.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+      ORDER BY table_name;
+    `);
+
+    const requiredTables = [
+      'users', 'user_sessions', 'password_reset_tokens', 'email_verification_tokens',
+      'projects', 'tasks', 'project_members', 'notifications', 'audit_logs',
+      'project_invitations', 'leave_requests'
+    ];
+
+    const existingTableNames = existingTables.rows.map(row => row.table_name);
+    const missingTables = requiredTables.filter(table => !existingTableNames.includes(table));
+
+    if (missingTables.length === 0) {
+      console.log('✅ All required tables already exist. No creation needed.');
+      return true;
+    }
+
+    console.log('━'.repeat(70));
+    console.log('🔧 CREATING DATABASE TABLES...');
+    console.log('━'.repeat(70));
+    console.log(`📋 Missing tables to create: ${missingTables.length}`);
+    console.log(`   ${missingTables.join(', ')}`);
+    console.log('━'.repeat(70));
+
+    // Use the professional table creation function
+    const result = await createTablesLocally(db);
+    
+    return result.success;
+  } catch (error) {
+    console.error('━'.repeat(70));
+    console.error('❌ Error in createAllTablesIfNotExist:', error.message);
+    console.error('━'.repeat(70));
+    
+    // Handle permission errors with helpful message
+    if (error.code === '42501' || error.message.includes('permission denied')) {
+      console.log('━'.repeat(70));
+      console.log('⚠️  PERMISSION ERROR DETECTED');
+      console.log('━'.repeat(70));
+      console.log('💡 To fix this, run one of these commands in PostgreSQL:');
+      console.log('');
+      console.log('   Option 1 (as superuser):');
+      console.log('   psql -U postgres -d your_database');
+      console.log('   GRANT CREATE ON SCHEMA public TO your_username;');
+      console.log('');
+      console.log('   Option 2 (as superuser):');
+      console.log('   GRANT ALL PRIVILEGES ON SCHEMA public TO your_username;');
+      console.log('');
+      console.log('   Option 3:');
+      console.log('   ALTER USER your_username CREATEDB;');
+      console.log('━'.repeat(70));
+      return false;
+    }
+    
+    return false;
+  }
+}
 
 // Database connection function
 async function connectToDatabase() {
@@ -68,6 +139,58 @@ async function connectToDatabase() {
     console.log(`   Tables: ${tableCount.rows[0].count} tables found`);
     console.log('━'.repeat(70));
     
+    // Automatically create tables if they don't exist
+    // We expect 11 tables: users, user_sessions, password_reset_tokens, email_verification_tokens,
+    // projects, tasks, project_members, notifications, audit_logs, project_invitations, leave_requests
+    const currentTableCount = parseInt(tableCount.rows[0].count);
+    
+    if (currentTableCount === 0) {
+      console.log('━'.repeat(70));
+      console.log('🔧 NO TABLES FOUND IN DATABASE!');
+      console.log('🔧 Starting automatic table creation...');
+      console.log('━'.repeat(70));
+      const tablesCreated = await createAllTablesIfNotExist();
+      
+      if (tablesCreated) {
+        // Re-count tables after creation
+        const newTableCount = await db.query(`
+          SELECT COUNT(*) as count 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public'
+        `);
+        console.log('━'.repeat(70));
+        console.log(`✅ Table creation complete! Total tables: ${newTableCount.rows[0].count}`);
+        console.log('━'.repeat(70));
+      } else {
+        console.log('━'.repeat(70));
+        console.log('⚠️  Table creation had issues. Please check permissions or create tables manually.');
+        console.log('━'.repeat(70));
+      }
+    } else if (currentTableCount < 11) {
+      console.log('━'.repeat(70));
+      console.log(`⚠️  INCOMPLETE DATABASE DETECTED!`);
+      console.log(`   Found: ${currentTableCount} tables`);
+      console.log(`   Expected: 11 tables`);
+      console.log('🔧 Creating missing tables...');
+      console.log('━'.repeat(70));
+      const tablesCreated = await createAllTablesIfNotExist();
+      
+      if (tablesCreated) {
+        const newTableCount = await db.query(`
+          SELECT COUNT(*) as count 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public'
+        `);
+        console.log('━'.repeat(70));
+        console.log(`✅ Missing tables created! Total tables now: ${newTableCount.rows[0].count}`);
+        console.log('━'.repeat(70));
+      }
+    } else {
+      // Tables exist, but still check and create any missing ones
+      console.log('📋 Verifying all required tables exist...');
+      await createAllTablesIfNotExist();
+    }
+    
     return true;
   } catch (error) {
     console.error('━'.repeat(70));
@@ -77,7 +200,6 @@ async function connectToDatabase() {
     console.log('💡 Please check:');
     console.log('   1. PostgreSQL is running');
     console.log('   2. connectiondb in .env is correct');
-    console.log('   3. Database tables are created (run: npm run create-all-tables)');
     console.error('━'.repeat(70));
     
     dbConnected = false;
