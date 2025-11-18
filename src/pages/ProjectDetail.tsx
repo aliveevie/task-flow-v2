@@ -17,6 +17,43 @@ import { toast } from "sonner";
 
 const API_URL = "http://localhost:3000/api";
 
+// Helper function to calculate timelines from dates
+const calculateTimelines = (dateAssigned: string, dueDate: string): string => {
+  if (!dateAssigned || !dueDate) {
+    return "";
+  }
+
+  try {
+    const assignedDate = new Date(dateAssigned);
+    const due = new Date(dueDate);
+    const diffTime = Math.abs(due.getTime() - assignedDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 7) {
+      return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      const remainingDays = diffDays % 7;
+      if (remainingDays === 0) {
+        return `${weeks} week${weeks > 1 ? 's' : ''}`;
+      } else {
+        return `${weeks} week${weeks > 1 ? 's' : ''} ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+      }
+    } else {
+      const months = Math.floor(diffDays / 30);
+      const remainingDays = diffDays % 30;
+      if (remainingDays < 7) {
+        return `${months} month${months > 1 ? 's' : ''}`;
+      } else {
+        const weeks = Math.floor(remainingDays / 7);
+        return `${months} month${months > 1 ? 's' : ''} ${weeks} week${weeks > 1 ? 's' : ''}`;
+      }
+    }
+  } catch (error) {
+    return "";
+  }
+};
+
 const ProjectDetail = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -118,15 +155,15 @@ const ProjectDetail = () => {
         body: JSON.stringify({
           project_id: projectId,
           title: data.deliverables,
-          description: data.description,
-          assigned_to: data.assignedTo,
-          assigned_by: data.assignedBy,
-          date_assigned: data.dateAssigned,
-          due_date: data.dueDate,
-          timelines: data.timelines,
-          priority: data.priority,
-          status: data.status,
-          comments: data.comments
+          description: data.description || "",
+          assigned_to: data.assignedTo || "",
+          assigned_by: data.assignedBy || "",
+          date_assigned: data.dateAssigned || null,
+          due_date: data.dueDate || null,
+          timelines: data.timelines || calculateTimelines(data.dateAssigned, data.dueDate) || "",
+          priority: data.priority ? data.priority.toLowerCase() : "medium",
+          status: data.status ? data.status.toLowerCase().replace(/\s+/g, '-') : "pending",
+          comments: data.comments || ""
         })
       });
 
@@ -154,15 +191,15 @@ const ProjectDetail = () => {
         },
         body: JSON.stringify({
           title: data.deliverables,
-          description: data.description,
-          assigned_to: data.assignedTo,
-          assigned_by: data.assignedBy,
-          date_assigned: data.dateAssigned,
-          due_date: data.dueDate,
-          timelines: data.timelines,
-          priority: data.priority,
-          status: data.status,
-          comments: data.comments
+          description: data.description || "",
+          assigned_to: data.assignedTo || "",
+          assigned_by: data.assignedBy || "",
+          date_assigned: data.dateAssigned || null,
+          due_date: data.dueDate || null,
+          timelines: data.timelines || calculateTimelines(data.dateAssigned, data.dueDate) || "",
+          priority: data.priority ? data.priority.toLowerCase() : "medium",
+          status: data.status ? data.status.toLowerCase().replace(/\s+/g, '-') : "pending",
+          comments: data.comments || ""
         })
       });
 

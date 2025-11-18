@@ -117,24 +117,98 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
 
   const fetchAllUsers = async () => {
     try {
-      // Fetch all users who have accepted invitations (are in project_members)
-      const response = await fetch(`http://localhost:3000/api/users`, {
+      // Fetch all users who have accepted invitations (are project members)
+      const response = await fetch(`http://localhost:3000/api/users/project-members`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      
       const result = await response.json();
       
       if (result.success) {
         // Format users to match project members structure
         const formattedUsers = (result.data || []).map((user: any) => ({
           id: user.id,
-          full_name: user.name
+          full_name: user.full_name
         }));
         setProjectMembers(formattedUsers);
+        console.log('Fetched project members:', formattedUsers);
+      } else {
+        console.error('Failed to fetch project members:', result.error);
+        // Fallback to fetching all users
+        const fallbackResponse = await fetch(`http://localhost:3000/api/users`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        const fallbackResult = await fallbackResponse.json();
+        
+        if (fallbackResult.success) {
+          const formattedUsers = (fallbackResult.data || []).map((user: any) => ({
+            id: user.id,
+            full_name: user.name
+          }));
+          setProjectMembers(formattedUsers);
+        }
       }
     } catch (error) {
       console.error("Error fetching users:", error);
+      // Final fallback to fetching all users
+      try {
+        const response = await fetch(`http://localhost:3000/api/users`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          const formattedUsers = (result.data || []).map((user: any) => ({
+            id: user.id,
+            full_name: user.name
+          }));
+          setProjectMembers(formattedUsers);
+        }
+      } catch (fallbackError) {
+        console.error("Error in fallback user fetch:", fallbackError);
+      }
+    }
+  };
+
+  const calculateTimelines = (dateAssigned: string, dueDate: string): string => {
+    if (!dateAssigned || !dueDate) {
+      return "";
+    }
+
+    try {
+      const assignedDate = new Date(dateAssigned);
+      const due = new Date(dueDate);
+      const diffTime = Math.abs(due.getTime() - assignedDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 7) {
+        return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+      } else if (diffDays < 30) {
+        const weeks = Math.floor(diffDays / 7);
+        const remainingDays = diffDays % 7;
+        if (remainingDays === 0) {
+          return `${weeks} week${weeks > 1 ? 's' : ''}`;
+        } else {
+          return `${weeks} week${weeks > 1 ? 's' : ''} ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+        }
+      } else {
+        const months = Math.floor(diffDays / 30);
+        const remainingDays = diffDays % 30;
+        if (remainingDays < 7) {
+          return `${months} month${months > 1 ? 's' : ''}`;
+        } else {
+          const weeks = Math.floor(remainingDays / 7);
+          return `${months} month${months > 1 ? 's' : ''} ${weeks} week${weeks > 1 ? 's' : ''}`;
+        }
+      }
+    } catch (error) {
+      return "";
     }
   };
 
@@ -214,7 +288,11 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
                 id="dateAssigned"
                 type="date"
                 value={formData.dateAssigned}
-                onChange={(e) => setFormData({ ...formData, dateAssigned: e.target.value })}
+                onChange={(e) => {
+                  const newDateAssigned = e.target.value;
+                  const calculatedTimelines = calculateTimelines(newDateAssigned, formData.dueDate);
+                  setFormData({ ...formData, dateAssigned: newDateAssigned, timelines: calculatedTimelines });
+                }}
               />
             </div>
 
@@ -224,19 +302,24 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
                 id="dueDate"
                 type="date"
                 value={formData.dueDate}
-                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                onChange={(e) => {
+                  const newDueDate = e.target.value;
+                  const calculatedTimelines = calculateTimelines(formData.dateAssigned, newDueDate);
+                  setFormData({ ...formData, dueDate: newDueDate, timelines: calculatedTimelines });
+                }}
                 required
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="timelines">Timelines</Label>
+            <Label htmlFor="timelines">Timelines (Auto-calculated)</Label>
             <Input
               id="timelines"
-              placeholder="e.g., 2 weeks, 1 month"
+              placeholder="Will be calculated from dates"
               value={formData.timelines}
-              onChange={(e) => setFormData({ ...formData, timelines: e.target.value })}
+              readOnly
+              className="bg-muted"
             />
           </div>
 

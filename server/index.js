@@ -1457,14 +1457,74 @@ app.post('/api/tasks', async (req, res) => {
   try {
     const { project_id, title, description, assigned_to, assigned_by, date_assigned, due_date, timelines, priority, status, comments } = req.body;
 
+    // Validate required fields
+    if (!project_id) {
+      return res.status(400).json({ success: false, error: 'project_id is required' });
+    }
+
+    if (!title) {
+      return res.status(400).json({ success: false, error: 'title is required' });
+    }
+
+    // Normalize priority and status to lowercase
+    const normalizedPriority = priority ? priority.toLowerCase() : 'medium';
+    const normalizedStatus = status ? status.toLowerCase().replace(/\s+/g, '-') : 'pending';
+
+    // Validate priority
+    const validPriorities = ['low', 'medium', 'high', 'critical'];
+    if (!validPriorities.includes(normalizedPriority)) {
+      return res.status(400).json({ success: false, error: `Invalid priority. Must be one of: ${validPriorities.join(', ')}` });
+    }
+
+    // Validate status
+    const validStatuses = ['pending', 'not-started', 'in-progress', 'blocked', 'completed'];
+    if (!validStatuses.includes(normalizedStatus)) {
+      return res.status(400).json({ success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+    }
+
     const result = await db.query(`
       INSERT INTO tasks (project_id, title, description, assigned_to, assigned_by, date_assigned, due_date, timelines, priority, status, comments)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
-    `, [project_id, title, description, assigned_to, assigned_by, date_assigned, due_date, timelines, priority || 'medium', status || 'pending', comments]);
+    `, [project_id, title, description || null, assigned_to || null, assigned_by || null, date_assigned || null, due_date || null, timelines || null, normalizedPriority, normalizedStatus, comments || null]);
 
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const newTask = result.rows[0];
+
+    // Send email notification to assigned user if assigned_to is provided
+    if (assigned_to && emailReady) {
+      try {
+        // Get project details
+        const projectResult = await db.query('SELECT title FROM projects WHERE id = $1', [project_id]);
+        const projectTitle = projectResult.rows[0]?.title || 'Project';
+
+        // Get assigned user's email
+        const userResult = await db.query('SELECT email, full_name FROM users WHERE full_name = $1', [assigned_to]);
+        
+        if (userResult.rows.length > 0) {
+          const assignedUser = userResult.rows[0];
+          const taskUrl = `http://localhost:8080/projects/${project_id}/tasks`;
+
+          await emailService.sendTaskAssignedEmail({
+            to: assignedUser.email,
+            userName: assignedUser.full_name,
+            taskTitle: title,
+            taskDescription: description || '',
+            projectName: projectTitle,
+            dueDate: due_date || '',
+            taskUrl: taskUrl
+          });
+
+          console.log(`✅ Task assignment email sent to: ${assignedUser.email}`);
+        }
+      } catch (emailError) {
+        console.error('Error sending task assignment email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.status(201).json({ success: true, data: newTask });
   } catch (error) {
+    console.error('Error creating task:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1477,10 +1537,31 @@ app.put('/api/tasks/:id', async (req, res) => {
 
   try {
     const { id } = req.params;
-    const updates = req.body;
+    let updates = { ...req.body };
+    
+    // Normalize priority and status if provided
+    if (updates.priority) {
+      updates.priority = updates.priority.toLowerCase();
+      const validPriorities = ['low', 'medium', 'high', 'critical'];
+      if (!validPriorities.includes(updates.priority)) {
+        return res.status(400).json({ success: false, error: `Invalid priority. Must be one of: ${validPriorities.join(', ')}` });
+      }
+    }
+    
+    if (updates.status) {
+      updates.status = updates.status.toLowerCase().replace(/\s+/g, '-');
+      const validStatuses = ['pending', 'not-started', 'in-progress', 'blocked', 'completed'];
+      if (!validStatuses.includes(updates.status)) {
+        return res.status(400).json({ success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
     
     const fields = Object.keys(updates).map((key, index) => `${key} = $${index + 1}`).join(', ');
     const values = Object.values(updates);
+    
+    // Get the original task to check if assigned_to changed
+    const originalTaskResult = await db.query('SELECT assigned_to, project_id FROM tasks WHERE id = $1', [id]);
+    const originalTask = originalTaskResult.rows[0];
     
     const result = await db.query(`
       UPDATE tasks SET ${fields}, updated_at = NOW() WHERE id = $${values.length + 1} RETURNING *
@@ -1490,7 +1571,43 @@ app.put('/api/tasks/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Task not found' });
     }
 
-    res.json({ success: true, data: result.rows[0] });
+    const updatedTask = result.rows[0];
+
+    // Send email notification if task was assigned to a different user
+    if (updates.assigned_to && updates.assigned_to !== originalTask?.assigned_to && emailReady) {
+      try {
+        const projectId = updatedTask.project_id || originalTask?.project_id;
+        
+        // Get project details
+        const projectResult = await db.query('SELECT title FROM projects WHERE id = $1', [projectId]);
+        const projectTitle = projectResult.rows[0]?.title || 'Project';
+
+        // Get assigned user's email
+        const userResult = await db.query('SELECT email, full_name FROM users WHERE full_name = $1', [updates.assigned_to]);
+        
+        if (userResult.rows.length > 0) {
+          const assignedUser = userResult.rows[0];
+          const taskUrl = `http://localhost:8080/projects/${projectId}/tasks`;
+
+          await emailService.sendTaskAssignedEmail({
+            to: assignedUser.email,
+            userName: assignedUser.full_name,
+            taskTitle: updatedTask.title || updates.title || 'Task',
+            taskDescription: updatedTask.description || updates.description || '',
+            projectName: projectTitle,
+            dueDate: updatedTask.due_date || updates.due_date || '',
+            taskUrl: taskUrl
+          });
+
+          console.log(`✅ Task assignment email sent to: ${assignedUser.email}`);
+        }
+      } catch (emailError) {
+        console.error('Error sending task assignment email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.json({ success: true, data: updatedTask });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1654,6 +1771,42 @@ app.get('/api/users', authenticateToken, async (req, res) => {
     }));
 
     res.json({ success: true, data: formattedUsers });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all users who have accepted invitations (are project members)
+app.get('/api/users/project-members', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const userId = req.user.userId;
+    
+    // Get all unique users who are members of any project (have accepted invitations)
+    const result = await db.query(`
+      SELECT DISTINCT
+        u.id,
+        u.full_name,
+        u.email,
+        u.role
+      FROM users u
+      INNER JOIN project_members pm ON pm.user_id = u.id
+      WHERE u.is_email_verified = true
+      ORDER BY u.full_name ASC
+    `);
+
+    res.json({ 
+      success: true, 
+      data: result.rows.map((user) => ({
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role
+      }))
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

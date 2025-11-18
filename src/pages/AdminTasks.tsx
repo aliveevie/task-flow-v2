@@ -19,10 +19,48 @@ const AdminTasks = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTasks();
+    fetchDefaultProject();
   }, []);
+
+  const fetchDefaultProject = async () => {
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) return;
+
+      const user = JSON.parse(userData);
+      
+      // Get user's first project (created or invited to)
+      const projectsResponse = await fetch(`${API_URL}/projects/created/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const projectsResult = await projectsResponse.json();
+      
+      if (projectsResult.success && projectsResult.data.length > 0) {
+        setDefaultProjectId(projectsResult.data[0].id);
+      } else {
+        // Try to get projects user was invited to
+        const invitedResponse = await fetch(`${API_URL}/projects/invited/${user.id}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        const invitedResult = await invitedResponse.json();
+        if (invitedResult.success && invitedResult.data.length > 0) {
+          setDefaultProjectId(invitedResult.data[0].id);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching default project:", error);
+    }
+  };
 
   const fetchTasks = async () => {
     try {
@@ -68,13 +106,49 @@ const AdminTasks = () => {
 
   const handleCreateTask = async (data: any) => {
     try {
+      if (!defaultProjectId) {
+        toast.error("No project found. Please create a project first.");
+        return;
+      }
+
+      // Calculate timelines from dates
+      let calculatedTimelines = "";
+      if (data.dateAssigned && data.dueDate) {
+        const assignedDate = new Date(data.dateAssigned);
+        const dueDate = new Date(data.dueDate);
+        const diffTime = Math.abs(dueDate.getTime() - assignedDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 7) {
+          calculatedTimelines = `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+        } else if (diffDays < 30) {
+          const weeks = Math.floor(diffDays / 7);
+          calculatedTimelines = `${weeks} week${weeks > 1 ? 's' : ''}`;
+        } else {
+          const months = Math.floor(diffDays / 30);
+          calculatedTimelines = `${months} month${months > 1 ? 's' : ''}`;
+        }
+      }
+
       const response = await fetch(`${API_URL}/tasks`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          project_id: defaultProjectId,
+          title: data.deliverables,
+          description: data.description || "",
+          assigned_to: data.assignedTo || "",
+          assigned_by: data.assignedBy || "",
+          date_assigned: data.dateAssigned || null,
+          due_date: data.dueDate || null,
+          timelines: calculatedTimelines || data.timelines || "",
+          priority: data.priority ? data.priority.toLowerCase() : "medium",
+          status: data.status ? data.status.toLowerCase().replace(/\s+/g, '-') : "pending",
+          comments: data.comments || ""
+        })
       });
 
       const result = await response.json();
@@ -94,13 +168,43 @@ const AdminTasks = () => {
 
   const handleEditTask = async (data: any) => {
     try {
+      // Calculate timelines from dates if not provided
+      let calculatedTimelines = data.timelines;
+      if (!calculatedTimelines && data.dateAssigned && data.dueDate) {
+        const assignedDate = new Date(data.dateAssigned);
+        const dueDate = new Date(data.dueDate);
+        const diffTime = Math.abs(dueDate.getTime() - assignedDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 7) {
+          calculatedTimelines = `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+        } else if (diffDays < 30) {
+          const weeks = Math.floor(diffDays / 7);
+          calculatedTimelines = `${weeks} week${weeks > 1 ? 's' : ''}`;
+        } else {
+          const months = Math.floor(diffDays / 30);
+          calculatedTimelines = `${months} month${months > 1 ? 's' : ''}`;
+        }
+      }
+
       const response = await fetch(`${API_URL}/tasks/${editingTask.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          title: data.deliverables,
+          description: data.description || "",
+          assigned_to: data.assignedTo || "",
+          assigned_by: data.assignedBy || "",
+          date_assigned: data.dateAssigned || null,
+          due_date: data.dueDate || null,
+          timelines: calculatedTimelines || "",
+          priority: data.priority ? data.priority.toLowerCase() : "medium",
+          status: data.status ? data.status.toLowerCase().replace(/\s+/g, '-') : "pending",
+          comments: data.comments || ""
+        })
       });
 
       const result = await response.json();
@@ -279,6 +383,7 @@ const AdminTasks = () => {
         open={isTaskModalOpen}
         onOpenChange={setIsTaskModalOpen}
         onSubmit={handleCreateTask}
+        projectId={defaultProjectId || undefined}
       />
 
       {editingTask && (
