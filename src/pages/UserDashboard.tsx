@@ -7,13 +7,12 @@ import { CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { toast } from "sonner";
 
+const API_URL = "http://localhost:3000/api";
+
 const UserDashboard = () => {
   const [userName, setUserName] = useState("User");
-  const [tasks, setTasks] = useState([
-    { id: 1, title: "Update landing page", description: "Redesign the homepage with new branding", dueDate: "2025-11-01", status: "In Progress", priority: "High" },
-    { id: 2, title: "Write API documentation", description: "Document all REST API endpoints", dueDate: "2025-11-05", status: "Not Started", priority: "Medium" },
-    { id: 3, title: "Fix mobile responsiveness", description: "Ensure all pages work on mobile devices", dueDate: "2025-10-30", status: "Completed", priority: "High" },
-  ]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -21,19 +20,82 @@ const UserDashboard = () => {
       const user = JSON.parse(userData);
       setUserName(user.full_name || "User");
     }
+    fetchTasks();
   }, []);
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/tasks/assigned`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Format tasks to match the expected structure
+        const formattedTasks = (result.data || []).map((task: any) => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          dueDate: task.due_date,
+          status: task.status,
+          priority: task.priority,
+          assignee: task.assigned_to,
+          projectTitle: task.project_title
+        }));
+        setTasks(formattedTasks);
+      } else {
+        toast.error(result.error || "Failed to load tasks");
+      }
+    } catch (error: any) {
+      console.error("Error fetching tasks:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const stats = [
     { title: "My Tasks", value: tasks.length.toString(), icon: CheckCircle2, color: "text-primary" },
-    { title: "In Progress", value: tasks.filter(t => t.status === "In Progress").length.toString(), icon: Clock, color: "text-warning" },
-    { title: "Completed", value: tasks.filter(t => t.status === "Completed").length.toString(), icon: CheckCircle2, color: "text-success" },
+    { title: "In Progress", value: tasks.filter(t => 
+      t.status?.toLowerCase() === "in progress" || 
+      t.status?.toLowerCase() === "in-progress" || 
+      t.status === "In Progress"
+    ).length.toString(), icon: Clock, color: "text-warning" },
+    { title: "Completed", value: tasks.filter(t => 
+      t.status?.toLowerCase() === "completed" || 
+      t.status === "Completed"
+    ).length.toString(), icon: CheckCircle2, color: "text-success" },
   ];
 
-  const handleStatusChange = (taskId: number, newStatus: string) => {
-    setTasks(tasks.map(task =>
-      task.id === taskId ? { ...task, status: newStatus } : task
-    ));
-    toast.success("Task status updated successfully!");
+  const handleStatusChange = async (taskId: number, newStatus: string) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setTasks(tasks.map(task =>
+          task.id === taskId ? { ...task, status: newStatus } : task
+        ));
+        toast.success("Task status updated successfully!");
+      } else {
+        toast.error(result.error || "Failed to update task status");
+      }
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast.error("Failed to update task status");
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -85,8 +147,18 @@ const UserDashboard = () => {
             <CardDescription>Tasks currently assigned to you</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {tasks.map((task) => (
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-muted-foreground">Loading tasks...</p>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No tasks assigned to you yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {tasks.map((task) => (
                 <div
                   key={task.id}
                   className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
@@ -124,7 +196,8 @@ const UserDashboard = () => {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

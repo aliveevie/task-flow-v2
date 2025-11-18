@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,20 +10,54 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import TaskModal from "@/components/tasks/TaskModal";
 import { toast } from "sonner";
 
+const API_URL = "http://localhost:3000/api";
+
 const AdminTasks = () => {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [tasks, setTasks] = useState([
-    { id: 1, title: "Update landing page", description: "Redesign homepage", assignee: "John Doe", dueDate: "2025-11-01", status: "In Progress", priority: "High" },
-    { id: 2, title: "Fix login bug", description: "Users can't login with Google", assignee: "Jane Smith", dueDate: "2025-10-28", status: "Blocked", priority: "Critical" },
-    { id: 3, title: "Design new dashboard", description: "Create modern dashboard UI", assignee: "Mike Johnson", dueDate: "2025-11-05", status: "Completed", priority: "Medium" },
-    { id: 4, title: "Write documentation", description: "API documentation for developers", assignee: "Sarah Williams", dueDate: "2025-11-10", status: "In Progress", priority: "Low" },
-    { id: 5, title: "Setup CI/CD pipeline", description: "Automate deployment process", assignee: "Tom Brown", dueDate: "2025-11-03", status: "Not Started", priority: "High" },
-    { id: 6, title: "Mobile app testing", description: "Test app on iOS and Android", assignee: "Lisa Davis", dueDate: "2025-10-30", status: "In Progress", priority: "Medium" },
-  ]);
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/tasks/my-tasks`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Format tasks to match the expected structure
+        const formattedTasks = (result.data || []).map((task: any) => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          assignee: task.assigned_to,
+          dueDate: task.due_date,
+          status: task.status,
+          priority: task.priority,
+          projectTitle: task.project_title
+        }));
+        setTasks(formattedTasks);
+      } else {
+        toast.error(result.error || "Failed to load tasks");
+      }
+    } catch (error: any) {
+      console.error("Error fetching tasks:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredTasks = tasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -32,22 +66,79 @@ const AdminTasks = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateTask = (data: any) => {
-    const newTask = { ...data, id: tasks.length + 1 };
-    setTasks([...tasks, newTask]);
-    toast.success("Task created successfully!");
-    setIsTaskModalOpen(false);
+  const handleCreateTask = async (data: any) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(data)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("Task created successfully!");
+        setIsTaskModalOpen(false);
+        fetchTasks(); // Refresh tasks list
+      } else {
+        toast.error(result.error || "Failed to create task");
+      }
+    } catch (error) {
+      console.error("Error creating task:", error);
+      toast.error("Failed to create task");
+    }
   };
 
-  const handleEditTask = (data: any) => {
-    setTasks(tasks.map(task => task.id === editingTask.id ? { ...task, ...data } : task));
-    toast.success("Task updated successfully!");
-    setEditingTask(null);
+  const handleEditTask = async (data: any) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${editingTask.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(data)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("Task updated successfully!");
+        setEditingTask(null);
+        fetchTasks(); // Refresh tasks list
+      } else {
+        toast.error(result.error || "Failed to update task");
+      }
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast.error("Failed to update task");
+    }
   };
 
-  const handleDeleteTask = (taskId: number) => {
-    setTasks(tasks.filter(task => task.id !== taskId));
-    toast.success("Task deleted successfully!");
+  const handleDeleteTask = async (taskId: number) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "DELETE",
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("Task deleted successfully!");
+        fetchTasks(); // Refresh tasks list
+      } else {
+        toast.error(result.error || "Failed to delete task");
+      }
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast.error("Failed to delete task");
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -115,12 +206,26 @@ const AdminTasks = () => {
         {/* Tasks Table */}
         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>All Tasks ({filteredTasks.length})</CardTitle>
-            <CardDescription>Manage and monitor all project tasks</CardDescription>
+            <CardTitle>My Tasks ({filteredTasks.length})</CardTitle>
+            <CardDescription>Tasks assigned to you or created by you</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {filteredTasks.map((task) => (
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-muted-foreground">Loading tasks...</p>
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">
+                  {searchQuery || statusFilter !== "all" 
+                    ? "No tasks match your filters." 
+                    : "No tasks assigned to you or created by you yet."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredTasks.map((task) => (
                 <div
                   key={task.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
@@ -164,7 +269,8 @@ const AdminTasks = () => {
                   </DropdownMenu>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

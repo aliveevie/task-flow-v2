@@ -1384,6 +1384,70 @@ app.get('/api/tasks', async (req, res) => {
   }
 });
 
+// Get tasks assigned to or created by the authenticated user
+app.get('/api/tasks/my-tasks', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const userId = req.user.userId;
+
+    // Get user's full name
+    const userResult = await db.query('SELECT full_name FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userName = userResult.rows[0].full_name;
+
+    // Get tasks assigned to this user OR created by this user
+    const result = await db.query(`
+      SELECT t.*, p.title as project_title
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.assigned_to = $1 OR t.assigned_by = $1
+      ORDER BY t.created_at DESC
+    `, [userName]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get tasks assigned to the authenticated user
+app.get('/api/tasks/assigned', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const userId = req.user.userId;
+
+    // Get user's full name
+    const userResult = await db.query('SELECT full_name FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userName = userResult.rows[0].full_name;
+
+    // Get tasks assigned to this user
+    const result = await db.query(`
+      SELECT t.*, p.title as project_title
+      FROM tasks t
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.assigned_to = $1
+      ORDER BY t.created_at DESC
+    `, [userName]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Create new task
 app.post('/api/tasks', async (req, res) => {
   if (!dbConnected || !db) {
@@ -1539,13 +1603,57 @@ app.get('/api/projects/:projectId/members', async (req, res) => {
   try {
     const { projectId } = req.params;
     const result = await db.query(`
-      SELECT pm.*, u.full_name, u.email, u.avatar_url
+      SELECT pm.*, u.full_name, u.email, u.avatar_url, u.role
       FROM project_members pm
       LEFT JOIN users u ON pm.user_id = u.id
       WHERE pm.project_id = $1
+      ORDER BY pm.created_at DESC
     `, [projectId]);
 
     res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all users with their task counts and invitation status
+app.get('/api/users', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    // Get all users with their task counts
+    const result = await db.query(`
+      SELECT 
+        u.id,
+        u.full_name as name,
+        u.email,
+        u.role,
+        u.is_active,
+        u.is_email_verified,
+        COUNT(DISTINCT t.id) as tasks_count,
+        COUNT(DISTINCT CASE WHEN pi.status = 'pending' THEN pi.id END) as pending_invites_count
+      FROM users u
+      LEFT JOIN tasks t ON t.assigned_to = u.full_name
+      LEFT JOIN project_invitations pi ON pi.invitee_email = u.email AND pi.status = 'pending'
+      GROUP BY u.id, u.full_name, u.email, u.role, u.is_active, u.is_email_verified
+      ORDER BY u.created_at DESC
+    `);
+
+    // Format the response
+    const formattedUsers = result.rows.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role === 'admin' ? 'Admin' : 'User',
+      status: user.is_active && user.is_email_verified ? 'Active' : 
+              user.is_email_verified ? 'Inactive' : 'Invited',
+      tasksCount: parseInt(user.tasks_count) || 0,
+      pendingInvites: parseInt(user.pending_invites_count) || 0
+    }));
+
+    res.json({ success: true, data: formattedUsers });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1950,6 +2058,60 @@ app.get('/api/invitations/accept', async (req, res) => {
   } catch (error) {
     console.error('Accept invitation error:', error);
     res.status(500).send('<h1>Error processing invitation</h1>');
+  }
+});
+
+// Get pending invitations
+app.get('/api/invitations/pending', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const userId = req.user.userId;
+
+    // Get pending invitations created by this user
+    const result = await db.query(`
+      SELECT i.*, p.title as project_title, u.full_name as invitee_name
+      FROM project_invitations i
+      JOIN projects p ON i.project_id = p.id
+      LEFT JOIN users u ON i.invitee_email = u.email
+      WHERE i.inviter_id = $1 AND i.status = 'pending'
+      ORDER BY i.created_at DESC
+    `, [userId]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update user role
+app.put('/api/users/:userId/role', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+    const currentUserId = req.user.userId;
+
+    // Check if current user is admin
+    const currentUserResult = await db.query('SELECT role FROM users WHERE id = $1', [currentUserId]);
+    if (currentUserResult.rows.length === 0 || currentUserResult.rows[0].role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Only admins can change user roles' });
+    }
+
+    if (!role || !['admin', 'user'].includes(role.toLowerCase())) {
+      return res.status(400).json({ success: false, error: 'Invalid role. Must be admin or user' });
+    }
+
+    await db.query('UPDATE users SET role = $1 WHERE id = $2', [role.toLowerCase(), userId]);
+
+    res.json({ success: true, message: 'User role updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

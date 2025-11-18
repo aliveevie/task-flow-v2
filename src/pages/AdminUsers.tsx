@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,55 +9,156 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import InviteUsersModal from "@/components/projects/InviteUsersModal";
 import { toast } from "sonner";
+
+const API_URL = "http://localhost:3000/api";
 
 const AdminUsers = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("user");
+  const [users, setUsers] = useState<any[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [users, setUsers] = useState([
-    { id: 1, name: "John Doe", email: "john@example.com", role: "Admin", status: "Active", tasksCount: 5 },
-    { id: 2, name: "Jane Smith", email: "jane@example.com", role: "User", status: "Active", tasksCount: 3 },
-    { id: 3, name: "Mike Johnson", email: "mike@example.com", role: "User", status: "Active", tasksCount: 4 },
-    { id: 4, name: "Sarah Williams", email: "sarah@example.com", role: "User", status: "Active", tasksCount: 2 },
-    { id: 5, name: "Tom Brown", email: "tom@example.com", role: "User", status: "Invited", tasksCount: 0 },
-    { id: 6, name: "Lisa Davis", email: "lisa@example.com", role: "User", status: "Active", tasksCount: 6 },
-  ]);
+  useEffect(() => {
+    fetchUsers();
+    fetchPendingInvites();
+  }, []);
 
-  const filteredUsers = users.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/users`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setUsers(result.data || []);
+      } else {
+        toast.error(result.error || "Failed to load users");
+      }
+    } catch (error: any) {
+      console.error("Error fetching users:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPendingInvites = async () => {
+    try {
+      const response = await fetch(`${API_URL}/invitations/pending`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setPendingInvites(result.data || []);
+      }
+    } catch (error) {
+      console.error("Error fetching pending invites:", error);
+    }
+  };
+
+  const filteredUsers = users.filter((user: any) =>
+    user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleInviteUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newUser = {
-      id: users.length + 1,
-      name: inviteEmail.split('@')[0],
-      email: inviteEmail,
-      role: inviteRole === "admin" ? "Admin" : "User",
-      status: "Invited",
-      tasksCount: 0
-    };
-    setUsers([...users, newUser]);
-    toast.success(`Invitation sent to ${inviteEmail}!`);
-    setIsInviteModalOpen(false);
-    setInviteEmail("");
-    setInviteRole("user");
+  const handleInviteUsers = async (emails: string[]) => {
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) {
+        toast.error("User not found");
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      
+      // Get all projects to invite users to (or you can select a specific project)
+      // For now, we'll need to get projects - but this should ideally be project-specific
+      // Let's create invitations for all projects the admin created
+      const projectsResponse = await fetch(`${API_URL}/projects/created/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const projectsResult = await projectsResponse.json();
+      
+      if (!projectsResult.success || projectsResult.data.length === 0) {
+        toast.error("No projects found. Please create a project first.");
+        return;
+      }
+
+      // For now, invite to the first project (you can enhance this later)
+      const projectId = projectsResult.data[0].id;
+
+      const invitePromises = emails.map(email =>
+        fetch(`${API_URL}/projects/invite`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            project_id: projectId,
+            invitee_email: email,
+            inviter_id: user.id,
+            message: "You've been invited to join this project"
+          })
+        })
+      );
+
+      await Promise.all(invitePromises);
+      
+      toast.success(`Invitations sent to ${emails.length} user(s)!`);
+      setIsInviteModalOpen(false);
+      fetchUsers();
+      fetchPendingInvites();
+    } catch (error) {
+      console.error("Error sending invitations:", error);
+      toast.error("Failed to send invitations");
+    }
   };
 
-  const handleRemoveUser = (userId: number) => {
-    setUsers(users.filter(user => user.id !== userId));
-    toast.success("User removed successfully!");
+  const handleRemoveUser = async (userId: string) => {
+    // This would remove user from all projects
+    // You might want to make this project-specific
+    toast.info("User removal functionality - to be implemented per project");
   };
 
-  const handleChangeRole = (userId: number, newRole: string) => {
-    setUsers(users.map(user =>
-      user.id === userId ? { ...user, role: newRole } : user
-    ));
-    toast.success("User role updated successfully!");
+  const handleChangeRole = async (userId: string, newRole: string) => {
+    try {
+      const response = await fetch(`${API_URL}/users/${userId}/role`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ role: newRole.toLowerCase() })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("User role updated successfully!");
+        fetchUsers();
+      } else {
+        toast.error(result.error || "Failed to update user role");
+      }
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      toast.error("Failed to update user role");
+    }
   };
 
   return (
@@ -103,9 +204,7 @@ const AdminUsers = () => {
               <Mail className="w-4 h-4 text-warning" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {users.filter(u => u.status === "Invited").length}
-              </div>
+              <div className="text-2xl font-bold">{pendingInvites.length}</div>
             </CardContent>
           </Card>
         </div>
@@ -132,8 +231,18 @@ const AdminUsers = () => {
             <CardDescription>Manage user access and permissions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {filteredUsers.map((user) => (
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-muted-foreground">Loading users...</p>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No users found.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredUsers.map((user) => (
                 <div
                   key={user.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
@@ -184,55 +293,18 @@ const AdminUsers = () => {
                   </DropdownMenu>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Invite User Modal */}
-      <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invite New User</DialogTitle>
-            <DialogDescription>
-              Send an invitation to join your team
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleInviteUser} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="user@example.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">Role</Label>
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger id="role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsInviteModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                Send Invitation
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Invite Users Modal */}
+      <InviteUsersModal
+        open={isInviteModalOpen}
+        onOpenChange={setIsInviteModalOpen}
+        onSubmit={handleInviteUsers}
+      />
     </DashboardLayout>
   );
 };

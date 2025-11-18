@@ -50,21 +50,26 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
     if (userData) {
       const user = JSON.parse(userData);
       setCurrentUserName(user.full_name);
+      setFormData(prev => ({ ...prev, assignedBy: user.full_name }));
     }
 
-    // Fetch project members if projectId is provided
-    if (projectId && open) {
-      fetchProjectMembers();
+    // Fetch project members or all users who accepted invitations
+    if (open) {
+      if (projectId) {
+        fetchProjectMembers();
+      } else {
+        fetchAllUsers();
+      }
     }
 
     if (initialData) {
       setFormData({
-        deliverables: initialData.deliverables || "",
+        deliverables: initialData.deliverables || initialData.title || "",
         description: initialData.description || "",
-        assignedTo: initialData.assignedTo || "",
-        assignedBy: initialData.assignedBy || "",
-        dateAssigned: initialData.dateAssigned || "",
-        dueDate: initialData.dueDate || "",
+        assignedTo: initialData.assignedTo || initialData.assigned_to || "",
+        assignedBy: initialData.assignedBy || initialData.assigned_by || currentUserName,
+        dateAssigned: initialData.dateAssigned || initialData.date_assigned || "",
+        dueDate: initialData.dueDate || initialData.due_date || "",
         timelines: initialData.timelines || "",
         priority: initialData.priority || "Medium",
         status: initialData.status || "Not Started",
@@ -98,10 +103,38 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
       const result = await response.json();
       
       if (result.success) {
-        setProjectMembers(result.data || []);
+        // Format members to include full_name
+        const formattedMembers = (result.data || []).map((member: any) => ({
+          id: member.user_id || member.id,
+          full_name: member.full_name
+        }));
+        setProjectMembers(formattedMembers);
       }
     } catch (error) {
       console.error("Error fetching project members:", error);
+    }
+  };
+
+  const fetchAllUsers = async () => {
+    try {
+      // Fetch all users who have accepted invitations (are in project_members)
+      const response = await fetch(`http://localhost:3000/api/users`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        // Format users to match project members structure
+        const formattedUsers = (result.data || []).map((user: any) => ({
+          id: user.id,
+          full_name: user.name
+        }));
+        setProjectMembers(formattedUsers);
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error);
     }
   };
 
