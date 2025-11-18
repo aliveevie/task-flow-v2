@@ -35,6 +35,47 @@ let dbConnected = false;
 // Initialize email service
 let emailReady = false;
 
+// Function to check and add missing columns (migrations)
+async function checkAndAddMissingColumns() {
+  if (!db || !dbConnected) {
+    return false;
+  }
+
+  try {
+    // Check if project_invitations table exists and if accepted_at column exists
+    const tableCheck = await db.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'project_invitations' 
+      AND table_schema = 'public'
+    `);
+
+    if (tableCheck.rows.length > 0) {
+      // Table exists, check for accepted_at column
+      const columnCheck = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'project_invitations' 
+        AND column_name = 'accepted_at'
+        AND table_schema = 'public'
+      `);
+
+      if (columnCheck.rows.length === 0) {
+        console.log('📝 Adding missing column: accepted_at to project_invitations table...');
+        await db.query(`
+          ALTER TABLE project_invitations 
+          ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE
+        `);
+        console.log('✅ Added accepted_at column to project_invitations table');
+      }
+    }
+  } catch (error) {
+    if (error.code !== '42701') { // 42701 = column already exists
+      console.log('⚠️  Note: Could not add missing columns:', error.message);
+    }
+  }
+}
+
 // Function to create all database tables if they don't exist
 async function createAllTablesIfNotExist() {
   if (!db || !dbConnected) {
@@ -62,6 +103,10 @@ async function createAllTablesIfNotExist() {
 
     if (missingTables.length === 0) {
       console.log('✅ All required tables already exist. No creation needed.');
+      
+      // Check and add missing columns (migrations)
+      await checkAndAddMissingColumns();
+      
       return true;
     }
 
@@ -74,6 +119,9 @@ async function createAllTablesIfNotExist() {
 
     // Use the professional table creation function
     const result = await createTablesLocally(db);
+    
+    // After creating tables, check for missing columns (migrations)
+    await checkAndAddMissingColumns();
     
     return result.success;
   } catch (error) {
@@ -189,6 +237,9 @@ async function connectToDatabase() {
       // Tables exist, but still check and create any missing ones
       console.log('📋 Verifying all required tables exist...');
       await createAllTablesIfNotExist();
+      
+      // Also check for missing columns (migrations)
+      await checkAndAddMissingColumns();
     }
     
     return true;
@@ -325,6 +376,40 @@ function generateJWTToken(userId, email, role) {
   );
 }
 
+// Helper function to verify JWT token
+function verifyJWTToken(token) {
+  try {
+    const secret = process.env.JWT_SECRET || 'your-secret-key-change-this';
+    return jwt.verify(token, secret);
+  } catch (error) {
+    return null;
+  }
+}
+
+// Middleware to authenticate requests
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Access token required'
+    });
+  }
+
+  const decoded = verifyJWTToken(token);
+  if (!decoded) {
+    return res.status(403).json({
+      success: false,
+      error: 'Invalid or expired token'
+    });
+  }
+
+  req.user = decoded;
+  next();
+}
+
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
   if (!dbConnected || !db) {
@@ -371,75 +456,72 @@ app.post('/api/auth/register', async (req, res) => {
     // Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // Generate verification token
-    const verificationToken = generateVerificationToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
     // Check if user has pending invitation (invited users get 'user' role, self-registered get 'admin')
     const invitationCheck = await db.query(
-      `SELECT id FROM project_invitations WHERE invitee_email = $1 AND status = 'pending' LIMIT 1`,
+      `SELECT id, invitation_token FROM project_invitations WHERE invitee_email = $1 AND status = 'pending' LIMIT 1`,
       [email]
     );
     
-    const userRole = invitationCheck.rows.length > 0 ? 'user' : 'admin';
+    const hasPendingInvitation = invitationCheck.rows.length > 0;
+    const userRole = hasPendingInvitation ? 'user' : 'admin';
+    // Skip email verification for invited users
+    const isEmailVerified = hasPendingInvitation ? true : false;
 
     // Insert user
     const userResult = await db.query(
       `INSERT INTO users (email, password_hash, full_name, role, is_email_verified, is_active)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, email, full_name, role`,
-      [email, password_hash, full_name, userRole, false, true]
+      [email, password_hash, full_name, userRole, isEmailVerified, true]
     );
 
     const user = userResult.rows[0];
 
-    // Insert verification token
-    await db.query(
-      `INSERT INTO email_verification_tokens (user_id, token, expires_at)
-       VALUES ($1, $2, $3)`,
-      [user.id, verificationToken, expiresAt]
-    );
+    // Only create verification token if user is not invited
+    if (!hasPendingInvitation) {
+      const verificationToken = generateVerificationToken();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      // Insert verification token
+      await db.query(
+        `INSERT INTO email_verification_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, $3)`,
+        [user.id, verificationToken, expiresAt]
+      );
+
+      // Send verification email
+      if (emailReady) {
+        const verificationLink = `http://localhost:3000/api/auth/verify-email?token=${verificationToken}`;
+        
+        try {
+          await emailService.sendVerificationEmail({
+            to: email,
+            userName: full_name,
+            verificationLink,
+            expiryTime: '24 hours'
+          });
+
+          console.log(`✅ Verification email sent to: ${email}`);
+        } catch (emailError) {
+          console.error('Failed to send verification email:', emailError);
+        }
+      }
+    } else {
+      console.log(`📧 User registered with pending invitation - skipping email verification`);
+    }
 
     // Create audit log
     await db.query(
       `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
        VALUES ($1, $2, $3, $4, $5)`,
-      [user.id, 'user_registered', 'user', user.id, JSON.stringify({ email })]
+      [user.id, 'user_registered', 'user', user.id, JSON.stringify({ email, invited: hasPendingInvitation })]
     );
-
-    // Send verification email
-    if (emailReady) {
-      const verificationLink = `http://localhost:3000/api/auth/verify-email?token=${verificationToken}`;
-      
-      try {
-        await emailService.sendVerificationEmail({
-          to: email,
-          userName: full_name,
-          verificationLink,
-          expiryTime: '24 hours'
-        });
-
-        console.log(`✅ Verification email sent to: ${email}`);
-      } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
-      }
-    }
-
-    // Check if there's a pending invitation for this email
-    const pendingInvitation = await db.query(
-      `SELECT invitation_token FROM project_invitations 
-       WHERE invitee_email = $1 AND status = 'pending' 
-       ORDER BY created_at DESC LIMIT 1`,
-      [email]
-    );
-
-    if (pendingInvitation.rows.length > 0) {
-      console.log(`📧 User has pending invitation, will prompt after verification`);
-    }
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful! Please check your email to verify your account.',
+      message: hasPendingInvitation 
+        ? 'Registration successful! You can now accept the project invitation.' 
+        : 'Registration successful! Please check your email to verify your account.',
       data: {
         user: {
           id: user.id,
@@ -447,7 +529,8 @@ app.post('/api/auth/register', async (req, res) => {
           full_name: user.full_name,
           role: user.role
         },
-        verification_required: true
+        verification_required: !hasPendingInvitation,
+        invitation_token: hasPendingInvitation ? invitationCheck.rows[0].invitation_token : null
       }
     });
 
@@ -701,8 +784,18 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
-    // Check if email is verified
-    if (!user.is_email_verified) {
+    // Check if user has pending invitation - skip email verification for invited users
+    const pendingInvitationCheck = await db.query(
+      `SELECT invitation_token FROM project_invitations 
+       WHERE invitee_email = $1 AND status = 'pending' 
+       ORDER BY created_at DESC LIMIT 1`,
+      [email]
+    );
+
+    const hasPendingInvitation = pendingInvitationCheck.rows.length > 0;
+
+    // Check if email is verified (skip check for users with pending invitations)
+    if (!user.is_email_verified && !hasPendingInvitation) {
       return res.status(403).json({
         success: false,
         error: 'Email not verified',
@@ -758,7 +851,8 @@ app.post('/api/auth/login', async (req, res) => {
         },
         token,
         sessionToken,
-        expiresAt
+        expiresAt,
+        invitation_token: hasPendingInvitation ? pendingInvitationCheck.rows[0].invitation_token : null
       }
     });
 
@@ -1239,6 +1333,37 @@ app.get('/api/projects/:projectId/tasks', async (req, res) => {
   }
 });
 
+// Get assigned tasks for a user in a project
+app.get('/api/projects/:projectId/tasks/assigned', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { projectId } = req.params;
+    const userId = req.user.userId;
+
+    // Get user's full name to match with assigned_to field
+    const userResult = await db.query('SELECT full_name FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userName = userResult.rows[0].full_name;
+
+    // Get tasks assigned to this user in the project
+    const result = await db.query(`
+      SELECT * FROM tasks 
+      WHERE project_id = $1 AND assigned_to = $2 
+      ORDER BY created_at DESC
+    `, [projectId, userName]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get all tasks
 app.get('/api/tasks', async (req, res) => {
   if (!dbConnected || !db) {
@@ -1510,7 +1635,141 @@ app.post('/api/projects/invite', async (req, res) => {
   }
 });
 
-// Accept invitation
+// Accept invitation (POST - authenticated)
+app.post('/api/invitations/accept', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database not connected'
+    });
+  }
+
+  try {
+    const { token } = req.body;
+    const userId = req.user.userId;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invitation token is required'
+      });
+    }
+
+    // Get invitation
+    const invitationResult = await db.query(`
+      SELECT i.*, p.title as project_title, p.id as project_id, u.full_name as inviter_name, u.email as inviter_email
+      FROM project_invitations i
+      JOIN projects p ON i.project_id = p.id
+      JOIN users u ON i.inviter_id = u.id
+      WHERE i.invitation_token = $1 AND i.status = 'pending'
+    `, [token]);
+
+    if (invitationResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid or expired invitation'
+      });
+    }
+
+    const invitation = invitationResult.rows[0];
+
+    // Check if expired
+    if (new Date() > new Date(invitation.expires_at)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invitation has expired'
+      });
+    }
+
+    // Verify the invitation is for the authenticated user
+    const userResult = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    if (user.email !== invitation.invitee_email) {
+      return res.status(403).json({
+        success: false,
+        error: 'This invitation is not for your account'
+      });
+    }
+
+    // Add user to project
+    await db.query(`
+      INSERT INTO project_members (project_id, user_id, role)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (project_id, user_id) DO NOTHING
+    `, [invitation.project_id, user.id, 'member']);
+
+    // Update invitation status
+    await db.query(`
+      UPDATE project_invitations 
+      SET status = 'accepted', accepted_at = NOW(), updated_at = NOW(), invitee_id = $1
+      WHERE id = $2
+    `, [user.id, invitation.id]);
+
+    // Create notifications
+    await createNotification(
+      invitation.inviter_id,
+      'invitation_accepted',
+      'Invitation Accepted',
+      `${user.full_name} accepted your invitation to join "${invitation.project_title}"`,
+      { project_id: invitation.project_id, user_id: user.id }
+    );
+
+    await createNotification(
+      user.id,
+      'project_joined',
+      'Joined Project',
+      `You joined project "${invitation.project_title}" invited by ${invitation.inviter_name}`,
+      { project_id: invitation.project_id, inviter_id: invitation.inviter_id }
+    );
+
+    // Notify admin
+    if (emailReady) {
+      await emailService.sendInvitationAcceptedEmail({
+        to: invitation.inviter_email,
+        adminName: invitation.inviter_name,
+        userName: user.full_name,
+        userEmail: user.email,
+        projectName: invitation.project_title,
+        projectUrl: `http://localhost:8080/admin/projects/${invitation.project_id}`
+      });
+
+      // Welcome user to project
+      await emailService.sendWelcomeToProjectEmail({
+        to: user.email,
+        userName: user.full_name,
+        projectName: invitation.project_title,
+        inviterName: invitation.inviter_name,
+        dashboardUrl: `http://localhost:8080/projects/${invitation.project_id}/tasks`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Invitation accepted successfully',
+      data: {
+        project_id: invitation.project_id,
+        project_title: invitation.project_title
+      }
+    });
+
+  } catch (error) {
+    console.error('Accept invitation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Accept invitation (GET - redirect to registration/login if not authenticated)
 app.get('/api/invitations/accept', async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).send('<h1>Database not connected</h1>');
@@ -1602,7 +1861,7 @@ app.get('/api/invitations/accept', async (req, res) => {
     // Update invitation status
     await db.query(`
       UPDATE project_invitations 
-      SET status = 'accepted', accepted_at = NOW(), invitee_id = $1
+      SET status = 'accepted', accepted_at = NOW(), updated_at = NOW(), invitee_id = $1
       WHERE id = $2
     `, [user.id, invitation.id]);
 
@@ -1644,13 +1903,13 @@ app.get('/api/invitations/accept', async (req, res) => {
       });
     }
 
-    // Redirect to login page so user can login and access their dashboard
+    // Redirect to project page with assigned tasks
     res.send(`
       <!DOCTYPE html>
       <html>
       <head>
         <title>Invitation Accepted - TaskFlow</title>
-        <meta http-equiv="refresh" content="3;url=http://localhost:8080/user">
+        <meta http-equiv="refresh" content="3;url=http://localhost:8080/projects/${invitation.project_id}/tasks">
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
@@ -1673,7 +1932,7 @@ app.get('/api/invitations/accept', async (req, res) => {
           .checkmark { font-size: 60px; color: #10b981; }
         </style>
         <script>
-          setTimeout(function() { window.location.href = 'http://localhost:8080/user'; }, 3000);
+          setTimeout(function() { window.location.href = 'http://localhost:8080/projects/${invitation.project_id}/tasks'; }, 3000);
         </script>
       </head>
       <body>
@@ -1681,7 +1940,7 @@ app.get('/api/invitations/accept', async (req, res) => {
           <div class="checkmark">✓</div>
           <h1 style="color: #667eea;">Invitation Accepted!</h1>
           <p>Welcome to ${invitation.project_title}!</p>
-          <p>Please login to access your dashboard...</p>
+          <p>Redirecting to your project...</p>
           <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(102, 126, 234, 0.3); border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin-top: 20px;"></div>
         </div>
       </body>

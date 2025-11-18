@@ -14,6 +14,7 @@ import AdminSettings from "./pages/AdminSettings";
 import UserDashboard from "./pages/UserDashboard";
 import UserSettings from "./pages/UserSettings";
 import Notifications from "./pages/Notifications";
+import ProjectAssignedTasks from "./pages/ProjectAssignedTasks";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/user" element={<UserDashboard />} />
           <Route path="/user/settings" element={<UserSettings />} />
           <Route path="/user/notifications" element={<Notifications />} />
+          <Route path="/projects/:projectId/tasks" element={<ProjectAssignedTasks />} />
           <Route path="/notifications" element={<Notifications />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

@@ -75,9 +75,49 @@ const Auth = () => {
         toast.success(`Welcome back, ${data.data.user.full_name}!`);
         
         // Check if there's a pending invitation to accept
-        if (invitationToken) {
+        const tokenToAccept = data.data.invitation_token || invitationToken;
+        if (tokenToAccept) {
           // Accept the invitation after login
-          window.location.href = `http://localhost:3000/api/invitations/accept?token=${invitationToken}`;
+          try {
+            const acceptResponse = await fetch(`${API_URL}/invitations/accept`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${data.data.token}`
+              },
+              body: JSON.stringify({ token: tokenToAccept })
+            });
+
+            const acceptResult = await acceptResponse.json();
+            
+            if (acceptResult.success) {
+              toast.success(`Invitation accepted! Redirecting to project...`);
+              setTimeout(() => {
+                window.location.href = `/projects/${acceptResult.data.project_id}/tasks`;
+              }, 1000);
+            } else {
+              toast.error(acceptResult.error || "Failed to accept invitation");
+              // Redirect to user dashboard if invitation acceptance fails
+              setTimeout(() => {
+                if (data.data.user.role === "admin") {
+                  window.location.href = "/admin";
+                } else {
+                  window.location.href = "/user";
+                }
+              }, 1000);
+            }
+          } catch (acceptError) {
+            console.error("Error accepting invitation:", acceptError);
+            toast.error("Failed to accept invitation");
+            // Redirect to user dashboard
+            setTimeout(() => {
+              if (data.data.user.role === "admin") {
+                window.location.href = "/admin";
+              } else {
+                window.location.href = "/user";
+              }
+            }, 1000);
+          }
           return;
         }
         
@@ -116,13 +156,74 @@ const Auth = () => {
       const data = await response.json();
 
       if (data.success) {
-        setRegisteredEmail(registerData.email);
-        setShowVerificationMessage(true);
-        
-        if (invitationToken) {
-          toast.success("Registration successful! Please check your email and verify, then accept the invitation.");
+        // If user has pending invitation, they don't need email verification
+        if (data.data.verification_required === false && data.data.invitation_token) {
+          // Auto-login the user and accept invitation
+          try {
+            // First, login the user
+            const loginResponse = await fetch(`${API_URL}/auth/login`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                email: registerData.email,
+                password: registerData.password
+              })
+            });
+
+            const loginData = await loginResponse.json();
+
+            if (loginData.success) {
+              // Store user data and token
+              localStorage.setItem("token", loginData.data.token);
+              localStorage.setItem("sessionToken", loginData.data.sessionToken);
+              localStorage.setItem("user", JSON.stringify(loginData.data.user));
+
+              // Accept the invitation
+              const acceptResponse = await fetch(`${API_URL}/invitations/accept`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${loginData.data.token}`
+                },
+                body: JSON.stringify({ token: data.data.invitation_token })
+              });
+
+              const acceptResult = await acceptResponse.json();
+              
+              if (acceptResult.success) {
+                toast.success("Account created and invitation accepted! Redirecting to project...");
+                setTimeout(() => {
+                  window.location.href = `/projects/${acceptResult.data.project_id}/tasks`;
+                }, 1000);
+              } else {
+                toast.error(acceptResult.error || "Failed to accept invitation");
+                setTimeout(() => {
+                  window.location.href = "/user";
+                }, 1000);
+              }
+            } else {
+              toast.error("Registration successful but login failed. Please login manually.");
+              setRegisteredEmail(registerData.email);
+              setShowVerificationMessage(false);
+            }
+          } catch (error) {
+            console.error("Error during auto-login:", error);
+            toast.error("Registration successful but auto-login failed. Please login manually.");
+            setRegisteredEmail(registerData.email);
+            setShowVerificationMessage(false);
+          }
         } else {
-          toast.success("Registration successful! Please check your email to verify your account.");
+          // Normal registration flow with email verification
+          setRegisteredEmail(registerData.email);
+          setShowVerificationMessage(true);
+          
+          if (invitationToken) {
+            toast.success("Registration successful! Please check your email and verify, then accept the invitation.");
+          } else {
+            toast.success("Registration successful! Please check your email to verify your account.");
+          }
         }
         
         // Reset form

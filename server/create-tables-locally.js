@@ -306,6 +306,7 @@ export async function createTablesLocally(db) {
           message TEXT,
           status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'expired')),
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+          accepted_at TIMESTAMP WITH TIME ZONE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
@@ -317,6 +318,30 @@ export async function createTablesLocally(db) {
       await db.query('CREATE INDEX IF NOT EXISTS idx_project_invitations_status ON project_invitations(status);');
       console.log('✅ Project invitations table created');
       tablesCreated.push('project_invitations');
+      
+      // Check if accepted_at column exists, if not add it (for existing databases)
+      try {
+        const columnCheck = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'project_invitations' 
+          AND column_name = 'accepted_at'
+        `);
+        
+        if (columnCheck.rows.length === 0) {
+          console.log('📝 Adding accepted_at column to existing project_invitations table...');
+          await db.query(`
+            ALTER TABLE project_invitations 
+            ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE
+          `);
+          console.log('✅ Added accepted_at column to project_invitations table');
+        }
+      } catch (migrationError) {
+        // Column might already exist or table doesn't exist yet, ignore
+        if (migrationError.code !== '42701' && migrationError.code !== '42P01') {
+          console.log('⚠️  Note: Could not add accepted_at column (may already exist):', migrationError.message);
+        }
+      }
     } catch (error) {
       if (error.code !== '42P07') {
         console.error('❌ Error creating project_invitations table:', error.message);
@@ -324,6 +349,29 @@ export async function createTablesLocally(db) {
       } else {
         console.log('✅ Project invitations table already exists');
         tablesCreated.push('project_invitations');
+        
+        // Try to add accepted_at column if table exists but column doesn't
+        try {
+          const columnCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'project_invitations' 
+            AND column_name = 'accepted_at'
+          `);
+          
+          if (columnCheck.rows.length === 0) {
+            console.log('📝 Adding accepted_at column to existing project_invitations table...');
+            await db.query(`
+              ALTER TABLE project_invitations 
+              ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE
+            `);
+            console.log('✅ Added accepted_at column to project_invitations table');
+          }
+        } catch (migrationError) {
+          if (migrationError.code !== '42701') {
+            console.log('⚠️  Note: Could not add accepted_at column:', migrationError.message);
+          }
+        }
       }
     }
 

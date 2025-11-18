@@ -17,14 +17,25 @@ const InviteUsersModal = ({ open, onOpenChange, onSubmit }: InviteUsersModalProp
   const [emails, setEmails] = useState<string[]>([]);
 
   const handleAddEmail = () => {
-    const trimmedEmail = emailInput.trim();
-    if (trimmedEmail && !emails.includes(trimmedEmail)) {
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (emailRegex.test(trimmedEmail)) {
-        setEmails([...emails, trimmedEmail]);
-        setEmailInput("");
-      }
+    const trimmedInput = emailInput.trim();
+    if (!trimmedInput) return;
+
+    // Split by comma and process each email
+    const emailList = trimmedInput
+      .split(",")
+      .map(email => email.trim())
+      .filter(email => email.length > 0);
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const validEmails = emailList.filter(email => emailRegex.test(email));
+    
+    // Add only new emails that aren't already in the list
+    const newEmails = validEmails.filter(email => !emails.includes(email));
+    
+    if (newEmails.length > 0) {
+      setEmails([...emails, ...newEmails]);
+      setEmailInput("");
     }
   };
 
@@ -54,7 +65,7 @@ const InviteUsersModal = ({ open, onOpenChange, onSubmit }: InviteUsersModalProp
         <DialogHeader>
           <DialogTitle>Invite Users to Project</DialogTitle>
           <DialogDescription>
-            Enter email addresses to invite users to collaborate on this project.
+            Enter email addresses (comma-separated) to invite users to collaborate on this project.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -67,7 +78,7 @@ const InviteUsersModal = ({ open, onOpenChange, onSubmit }: InviteUsersModalProp
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="user@example.com"
+                placeholder="user1@example.com, user2@example.com, ..."
               />
               <Button type="button" onClick={handleAddEmail} variant="outline">
                 Add
