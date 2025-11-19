@@ -8,6 +8,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, mkdirSync } from 'fs';
+import multer from 'multer';
 import emailService from './mails/emailService.js';
 import { createTablesLocally } from './create-tables-locally.js';
 
@@ -27,6 +29,45 @@ app.use(express.json());
 
 // Serve static files from public directory (for logo)
 app.use(express.static(join(__dirname, '../public')));
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = join(__dirname, '../uploads');
+if (!existsSync(uploadsDir)) {
+  mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for file uploads (1MB max file size)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + '-' + file.originalname);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 1024 * 1024 // 1MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow common document types
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx|txt|csv/;
+    const extname = allowedTypes.test(file.originalname.toLowerCase().split('.').pop());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images, PDFs, and documents are allowed.'));
+    }
+  }
+});
+
+// Serve uploaded files
+app.use('/uploads', express.static(uploadsDir));
 
 // Initialize database connection
 let db = null;
@@ -95,7 +136,7 @@ async function createAllTablesIfNotExist() {
     const requiredTables = [
       'users', 'user_sessions', 'password_reset_tokens', 'email_verification_tokens',
       'projects', 'tasks', 'project_members', 'notifications', 'audit_logs',
-      'project_invitations', 'leave_requests'
+      'project_invitations', 'leave_requests', 'task_submissions'
     ];
 
     const existingTableNames = existingTables.rows.map(row => row.table_name);
@@ -794,8 +835,17 @@ app.post('/api/auth/login', async (req, res) => {
 
     const hasPendingInvitation = pendingInvitationCheck.rows.length > 0;
 
-    // Check if email is verified (skip check for users with pending invitations)
-    if (!user.is_email_verified && !hasPendingInvitation) {
+    // Check if user is already a project member (has accepted invitations)
+    // This means they're already part of the system and should be allowed to log in
+    const projectMemberCheck = await db.query(
+      `SELECT id FROM project_members WHERE user_id = $1 LIMIT 1`,
+      [user.id]
+    );
+
+    const isProjectMember = projectMemberCheck.rows.length > 0;
+
+    // Check if email is verified (skip check for users with pending invitations OR existing project members)
+    if (!user.is_email_verified && !hasPendingInvitation && !isProjectMember) {
       return res.status(403).json({
         success: false,
         error: 'Email not verified',
@@ -1403,7 +1453,7 @@ app.get('/api/tasks/my-tasks', authenticateToken, async (req, res) => {
 
     // Get tasks assigned to this user OR created by this user
     const result = await db.query(`
-      SELECT t.*, p.title as project_title
+      SELECT t.*, p.title as project_title, p.created_by as project_creator_id
       FROM tasks t
       LEFT JOIN projects p ON t.project_id = p.id
       WHERE t.assigned_to = $1 OR t.assigned_by = $1
@@ -1625,6 +1675,300 @@ app.delete('/api/tasks/:id', async (req, res) => {
     await db.query('DELETE FROM tasks WHERE id = $1', [id]);
     
     res.json({ success: true, message: 'Task deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
+// TASK SUBMISSIONS ENDPOINTS
+// ============================================================
+
+// Submit proof of work for a task
+app.post('/api/tasks/:taskId/submit', authenticateToken, upload.array('files', 5), async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { taskId } = req.params;
+    const userId = req.user.userId;
+    const { submission_text } = req.body;
+
+    if (!submission_text || submission_text.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Submission text is required' });
+    }
+
+    // Verify task exists and user is assigned to it
+    const taskResult = await db.query(`
+      SELECT t.*, p.title as project_title, p.created_by as project_creator_id
+      FROM tasks t
+      JOIN projects p ON t.project_id = p.id
+      WHERE t.id = $1
+    `, [taskId]);
+
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Task not found' });
+    }
+
+    const task = taskResult.rows[0];
+
+    // Check if user is assigned to this task
+    const userResult = await db.query('SELECT full_name FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userFullName = userResult.rows[0].full_name;
+    if (task.assigned_to !== userFullName) {
+      return res.status(403).json({ success: false, error: 'You are not assigned to this task' });
+    }
+
+    // Process uploaded files
+    const fileUrls = [];
+    const fileNames = [];
+    
+    if (req.files && req.files.length > 0) {
+      req.files.forEach((file) => {
+        fileUrls.push(`/uploads/${file.filename}`);
+        fileNames.push(file.originalname);
+      });
+    }
+
+    // Create submission
+    const submissionResult = await db.query(`
+      INSERT INTO task_submissions (
+        task_id, user_id, submission_text, file_urls, file_names, status
+      )
+      VALUES ($1, $2, $3, $4, $5, 'pending')
+      RETURNING *
+    `, [taskId, userId, submission_text.trim(), fileUrls, fileNames]);
+
+    const submission = submissionResult.rows[0];
+
+    // Create notification for task creator/admin
+    if (task.project_creator_id) {
+      await createNotification(
+        task.project_creator_id,
+        'task_submission',
+        'New Task Submission',
+        `${userFullName} submitted proof of work for task "${task.title}"`,
+        { task_id: taskId, submission_id: submission.id, user_id: userId }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Submission created successfully',
+      data: submission
+    });
+  } catch (error) {
+    console.error('Submit task error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all submissions for a task
+app.get('/api/tasks/:taskId/submissions', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { taskId } = req.params;
+
+    const result = await db.query(`
+      SELECT 
+        ts.*,
+        u.full_name as user_name,
+        u.email as user_email,
+        reviewer.full_name as reviewer_name
+      FROM task_submissions ts
+      JOIN users u ON ts.user_id = u.id
+      LEFT JOIN users reviewer ON ts.reviewed_by = reviewer.id
+      WHERE ts.task_id = $1
+      ORDER BY ts.submitted_at DESC
+    `, [taskId]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get submission by ID
+app.get('/api/submissions/:submissionId', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { submissionId } = req.params;
+
+    const result = await db.query(`
+      SELECT 
+        ts.*,
+        u.full_name as user_name,
+        u.email as user_email,
+        reviewer.full_name as reviewer_name,
+        t.title as task_title,
+        t.assigned_to,
+        p.title as project_title
+      FROM task_submissions ts
+      JOIN users u ON ts.user_id = u.id
+      JOIN tasks t ON ts.task_id = t.id
+      JOIN projects p ON t.project_id = p.id
+      LEFT JOIN users reviewer ON ts.reviewed_by = reviewer.id
+      WHERE ts.id = $1
+    `, [submissionId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Submission not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Review submission (approve/reject)
+app.put('/api/submissions/:submissionId/review', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { submissionId } = req.params;
+    const userId = req.user.userId;
+    const { status, admin_feedback } = req.body;
+
+    if (!status || !['approved', 'rejected', 'revision-requested'].includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Valid status is required (approved, rejected, or revision-requested)' 
+      });
+    }
+
+    // Get submission with task details
+    const submissionResult = await db.query(`
+      SELECT ts.*, t.*, p.created_by as project_creator_id
+      FROM task_submissions ts
+      JOIN tasks t ON ts.task_id = t.id
+      JOIN projects p ON t.project_id = p.id
+      WHERE ts.id = $1
+    `, [submissionId]);
+
+    if (submissionResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Submission not found' });
+    }
+
+    const submission = submissionResult.rows[0];
+    const task = submissionResult.rows[0];
+
+    // Check if user is the project creator/admin
+    const userResult = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userRole = userResult.rows[0].role;
+    if (task.project_creator_id !== userId && userRole !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Only project creator or admin can review submissions' 
+      });
+    }
+
+    // Update submission
+    const updateResult = await db.query(`
+      UPDATE task_submissions
+      SET 
+        status = $1,
+        admin_feedback = $2,
+        reviewed_by = $3,
+        reviewed_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $4
+      RETURNING *
+    `, [status, admin_feedback || null, userId, submissionId]);
+
+    const updatedSubmission = updateResult.rows[0];
+
+    // Update task status based on submission status
+    let newTaskStatus = task.status;
+    if (status === 'approved') {
+      newTaskStatus = 'completed';
+    } else if (status === 'revision-requested') {
+      newTaskStatus = 'in-progress';
+    }
+
+    if (newTaskStatus !== task.status) {
+      // Normalize status to match database constraints
+      const normalizedStatus = newTaskStatus.toLowerCase().replace(/\s+/g, '-');
+      await db.query(`
+        UPDATE tasks
+        SET status = $1, updated_at = NOW()
+        WHERE id = $2
+      `, [normalizedStatus, submission.task_id]);
+      
+      console.log(`✅ Task ${submission.task_id} status updated to: ${normalizedStatus}`);
+    }
+
+    // Get submitter details for notification
+    const submitterResult = await db.query('SELECT full_name, email FROM users WHERE id = $1', [submission.user_id]);
+    const submitter = submitterResult.rows[0];
+
+    // Create notification for submitter
+    await createNotification(
+      submission.user_id,
+      'submission_reviewed',
+      'Submission Reviewed',
+      `Your submission for task "${task.title}" has been ${status}`,
+      { 
+        task_id: submission.task_id, 
+        submission_id: submissionId, 
+        status: status,
+        project_id: task.project_id
+      }
+    );
+
+    res.json({
+      success: true,
+      message: `Submission ${status} successfully`,
+      data: updatedSubmission
+    });
+  } catch (error) {
+    console.error('Review submission error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get user's submissions
+app.get('/api/submissions/my-submissions', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const userId = req.user.userId;
+
+    const result = await db.query(`
+      SELECT 
+        ts.*,
+        t.title as task_title,
+        t.description as task_description,
+        p.title as project_title,
+        reviewer.full_name as reviewer_name
+      FROM task_submissions ts
+      JOIN tasks t ON ts.task_id = t.id
+      JOIN projects p ON t.project_id = p.id
+      LEFT JOIN users reviewer ON ts.reviewed_by = reviewer.id
+      WHERE ts.user_id = $1
+      ORDER BY ts.submitted_at DESC
+    `, [userId]);
+
+    res.json({ success: true, data: result.rows });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

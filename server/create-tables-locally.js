@@ -404,7 +404,43 @@ export async function createTablesLocally(db) {
       }
     }
 
-    // 12. CREATE HELPER FUNCTIONS
+    // 12. CREATE TASK SUBMISSIONS TABLE
+    try {
+      console.log('📋 Creating task_submissions table...');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS task_submissions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          task_id UUID REFERENCES tasks(id) ON DELETE CASCADE NOT NULL,
+          user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+          submission_text TEXT NOT NULL,
+          file_urls TEXT[] DEFAULT ARRAY[]::TEXT[],
+          file_names TEXT[] DEFAULT ARRAY[]::TEXT[],
+          status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'revision-requested')),
+          admin_feedback TEXT,
+          reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+          reviewed_at TIMESTAMP WITH TIME ZONE,
+          submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          UNIQUE(task_id, user_id, submitted_at)
+        );
+      `);
+      await db.query('CREATE INDEX IF NOT EXISTS idx_task_submissions_task_id ON task_submissions(task_id);');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_task_submissions_user_id ON task_submissions(user_id);');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_task_submissions_status ON task_submissions(status);');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_task_submissions_reviewed_by ON task_submissions(reviewed_by);');
+      console.log('✅ Task submissions table created');
+      tablesCreated.push('task_submissions');
+    } catch (error) {
+      if (error.code !== '42P07') {
+        console.error('❌ Error creating task_submissions table:', error.message);
+        errors.push({ table: 'task_submissions', error: error.message });
+      } else {
+        console.log('✅ Task submissions table already exists');
+        tablesCreated.push('task_submissions');
+      }
+    }
+
+    // 13. CREATE HELPER FUNCTIONS
     console.log('📋 Creating helper functions...');
     try {
       await db.query(`
@@ -464,9 +500,9 @@ export async function createTablesLocally(db) {
       console.log('⚠️  Could not create cleanup_expired_tokens function:', funcError.message);
     }
 
-    // 13. CREATE TRIGGERS
+    // 14. CREATE TRIGGERS
     console.log('📋 Creating triggers...');
-    const tablesWithTriggers = ['users', 'user_sessions', 'projects', 'tasks', 'project_invitations', 'leave_requests'];
+    const tablesWithTriggers = ['users', 'user_sessions', 'projects', 'tasks', 'project_invitations', 'leave_requests', 'task_submissions'];
     for (const table of tablesWithTriggers) {
       try {
         await db.query(`
