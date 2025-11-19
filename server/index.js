@@ -1452,13 +1452,22 @@ app.get('/api/tasks/my-tasks', authenticateToken, async (req, res) => {
     const userName = userResult.rows[0].full_name;
 
     // Get tasks assigned to this user OR created by this user
+    // Only show tasks where the assigned user has accepted the invitation (is a project member)
     const result = await db.query(`
-      SELECT t.*, p.title as project_title, p.created_by as project_creator_id
+      SELECT DISTINCT t.*, p.title as project_title, p.created_by as project_creator_id
       FROM tasks t
       LEFT JOIN projects p ON t.project_id = p.id
-      WHERE t.assigned_to = $1 OR t.assigned_by = $1
+      LEFT JOIN users assigned_user ON assigned_user.full_name = t.assigned_to
+      LEFT JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = assigned_user.id
+      WHERE (t.assigned_to = $1 OR t.assigned_by = $1)
+        AND (
+          t.assigned_to IS NULL 
+          OR t.assigned_to = $1 
+          OR pm.id IS NOT NULL 
+          OR p.created_by = $2
+        )
       ORDER BY t.created_at DESC
-    `, [userName]);
+    `, [userName, userId]);
 
     res.json({ success: true, data: result.rows });
   } catch (error) {
@@ -1969,6 +1978,372 @@ app.get('/api/submissions/my-submissions', authenticateToken, async (req, res) =
     `, [userId]);
 
     res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
+// BULK TASK IMPORT ENDPOINTS
+// ============================================================
+
+// Helper function to send invitation
+async function sendInvitationForImport(projectId, inviterId, email, name, projectTitle) {
+  const invitationToken = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+
+  // Check if invitation already exists
+  const existingInvitation = await db.query(
+    'SELECT id FROM project_invitations WHERE project_id = $1 AND invitee_email = $2 AND status = $3',
+    [projectId, email, 'pending']
+  );
+
+  if (existingInvitation.rows.length > 0) {
+    return; // Invitation already exists
+  }
+
+  // Create invitation
+  await db.query(`
+    INSERT INTO project_invitations (
+      project_id, inviter_id, invitee_email, invitation_token, expires_at, status
+    )
+    VALUES ($1, $2, $3, $4, $5, 'pending')
+  `, [projectId, inviterId, email, invitationToken, expiresAt]);
+
+  // Send invitation email
+  if (emailReady) {
+    try {
+      const acceptUrl = `http://localhost:3000/api/invitations/accept?token=${invitationToken}`;
+      const inviterResult = await db.query('SELECT full_name FROM users WHERE id = $1', [inviterId]);
+      const inviterName = inviterResult.rows[0]?.full_name || 'Admin';
+      
+      await emailService.sendProjectInviteEmail({
+        to: email,
+        userName: name || 'User',
+        projectName: projectTitle,
+        invitedBy: inviterName,
+        projectDescription: '',
+        acceptUrl: acceptUrl
+      });
+    } catch (emailError) {
+      console.error('Error sending invitation email:', emailError);
+    }
+  }
+}
+
+// Bulk import tasks with invitations
+app.post('/api/projects/:projectId/tasks/import', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { projectId } = req.params;
+    const userId = req.user.userId;
+    const { tasks } = req.body;
+
+    if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ success: false, error: 'Tasks array is required' });
+    }
+
+    // Verify project exists and user is creator
+    const projectResult = await db.query('SELECT * FROM projects WHERE id = $1', [projectId]);
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    const project = projectResult.rows[0];
+    if (project.created_by !== userId) {
+      return res.status(403).json({ success: false, error: 'Only project creator can import tasks' });
+    }
+
+    const results = {
+      created: 0,
+      failed: 0,
+      invitations_sent: 0,
+      errors: []
+    };
+
+    // Helper function to parse and validate dates
+    const parseDate = (dateStr) => {
+      if (!dateStr) return null;
+      
+      try {
+        const str = String(dateStr).trim();
+        
+        // Skip if it's not a date (contains text like "Continuous", "Quarterly", etc.)
+        if (/[a-zA-Z]{3,}/.test(str) && !str.match(/\d{4}/)) {
+          return null;
+        }
+        
+        // Extract date from ranges like "07/08/2025 – 07/09/2025" (take first date)
+        let datePart = str;
+        const rangeMatch = str.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+        if (rangeMatch) {
+          datePart = rangeMatch[1];
+        }
+        
+        // Extract date from formats like "Start: 07/08/2025 → Quarterly"
+        const startMatch = str.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+        if (startMatch) {
+          datePart = startMatch[1];
+        }
+        
+        // Try to parse the date
+        const parts = datePart.split(/[\/\-]/);
+        if (parts.length === 3) {
+          const day = parseInt(parts[0]);
+          const month = parseInt(parts[1]) - 1;
+          const year = parseInt(parts[2].length === 2 ? `20${parts[2]}` : parts[2]);
+          
+          const date = new Date(year, month, day);
+          if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === day) {
+            // Format as YYYY-MM-DD for PostgreSQL
+            return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          }
+        }
+        
+        // Try ISO format or standard Date parsing
+        const parsed = new Date(datePart);
+        if (!isNaN(parsed.getTime())) {
+          return parsed.toISOString().split('T')[0];
+        }
+      } catch (e) {
+        // Invalid date
+      }
+      
+      return null;
+    };
+
+    // Process each task
+    for (const taskData of tasks) {
+      try {
+        // Parse and validate dates
+        const dateAssigned = parseDate(taskData.date_assigned);
+        const dueDate = parseDate(taskData.due_date);
+        
+        // Normalize priority and status
+        const priority = (taskData.priority || 'medium').toLowerCase();
+        const status = (taskData.status || 'pending').toLowerCase().replace(/\s+/g, '-');
+
+        // Calculate timelines if dates provided
+        let timelines = '';
+        if (dateAssigned && dueDate) {
+          try {
+            const assignedDate = new Date(dateAssigned);
+            const dueDateObj = new Date(dueDate);
+            const diffTime = Math.abs(dueDateObj.getTime() - assignedDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays < 7) {
+              timelines = `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+            } else if (diffDays < 30) {
+              const weeks = Math.floor(diffDays / 7);
+              timelines = `${weeks} week${weeks > 1 ? 's' : ''}`;
+            } else {
+              const months = Math.floor(diffDays / 30);
+              timelines = `${months} month${months > 1 ? 's' : ''}`;
+            }
+          } catch (e) {
+            // Timeline calculation failed, leave empty
+          }
+        }
+
+        // Determine assigned_to name
+        let assignedToName = taskData.assigned_to || taskData.name || null;
+        let assignedUserId = null;
+        let shouldSendInvitation = false;
+
+        // If email is provided, check if user exists and send invitation
+        if (taskData.email) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (emailRegex.test(taskData.email)) {
+            const userResult = await db.query('SELECT id, full_name FROM users WHERE email = $1', [taskData.email.toLowerCase()]);
+            
+            if (userResult.rows.length > 0) {
+              // User exists - check if they're a project member
+              const existingUser = userResult.rows[0];
+              assignedUserId = existingUser.id;
+              assignedToName = existingUser.full_name || taskData.name || taskData.assigned_to;
+
+              const memberCheck = await db.query(
+                'SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2',
+                [projectId, assignedUserId]
+              );
+
+              if (memberCheck.rows.length === 0) {
+                // User exists but not a member - send invitation
+                shouldSendInvitation = true;
+              }
+            } else {
+              // User doesn't exist - send invitation
+              shouldSendInvitation = true;
+              assignedToName = taskData.name || taskData.assigned_to || 'User';
+            }
+          }
+        }
+
+        // Send invitation if needed
+        if (shouldSendInvitation && taskData.email) {
+          try {
+            await sendInvitationForImport(projectId, userId, taskData.email, taskData.name || taskData.assigned_to || 'User', project.title);
+            results.invitations_sent++;
+          } catch (invError) {
+            results.errors.push(`Failed to send invitation to ${taskData.email}: ${invError.message}`);
+          }
+        }
+
+        // Create task (will only be visible to users who accept invitations)
+        // Use assigned_to from data, or name, or leave null
+        await db.query(`
+          INSERT INTO tasks (
+            project_id, title, description, assigned_to, assigned_by,
+            date_assigned, due_date, timelines, priority, status, comments
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          projectId,
+          taskData.title,
+          taskData.description || null,
+          assignedToName,
+          taskData.assigned_by || null,
+          dateAssigned,
+          dueDate,
+          timelines || null,
+          priority,
+          status,
+          taskData.comments || null
+        ]);
+
+        results.created++;
+        
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Task "${taskData.title || 'Unknown'}" failed: ${error.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Import completed: ${results.created} tasks created, ${results.invitations_sent} invitations sent`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Bulk import error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get project invitations
+app.get('/api/projects/:projectId/invitations', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { projectId } = req.params;
+    const userId = req.user.userId;
+
+    // Verify user is project creator
+    const projectResult = await db.query('SELECT created_by FROM projects WHERE id = $1', [projectId]);
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    if (projectResult.rows[0].created_by !== userId) {
+      return res.status(403).json({ success: false, error: 'Only project creator can view invitations' });
+    }
+
+    const result = await db.query(`
+      SELECT 
+        pi.*,
+        p.title as project_title,
+        u.full_name as inviter_name
+      FROM project_invitations pi
+      JOIN projects p ON pi.project_id = p.id
+      LEFT JOIN users u ON pi.inviter_id = u.id
+      WHERE pi.project_id = $1
+      ORDER BY pi.created_at DESC
+    `, [projectId]);
+
+    // Get invitee names from users table if they exist
+    const invitationsWithNames = await Promise.all(
+      result.rows.map(async (invitation) => {
+        const userResult = await db.query(
+          'SELECT full_name FROM users WHERE email = $1',
+          [invitation.invitee_email]
+        );
+        return {
+          ...invitation,
+          invitee_name: userResult.rows[0]?.full_name || null
+        };
+      })
+    );
+
+    res.json({ success: true, data: invitationsWithNames });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Resend invitation
+app.post('/api/invitations/:invitationId/resend', authenticateToken, async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ success: false, error: 'Database not connected' });
+  }
+
+  try {
+    const { invitationId } = req.params;
+    const userId = req.user.userId;
+    const { email } = req.body;
+
+    // Get invitation
+    const invitationResult = await db.query(`
+      SELECT pi.*, p.title as project_title, p.created_by, u.full_name as inviter_name
+      FROM project_invitations pi
+      JOIN projects p ON pi.project_id = p.id
+      LEFT JOIN users u ON pi.inviter_id = u.id
+      WHERE pi.id = $1
+    `, [invitationId]);
+
+    if (invitationResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Invitation not found' });
+    }
+
+    const invitation = invitationResult.rows[0];
+
+    // Verify user is project creator
+    if (invitation.created_by !== userId) {
+      return res.status(403).json({ success: false, error: 'Only project creator can resend invitations' });
+    }
+
+    // Generate new token and extend expiry
+    const newToken = crypto.randomBytes(32).toString('hex');
+    const newExpiresAt = new Date();
+    newExpiresAt.setDate(newExpiresAt.getDate() + 7);
+
+    // Update invitation
+    await db.query(`
+      UPDATE project_invitations
+      SET invitation_token = $1, expires_at = $2, updated_at = NOW()
+      WHERE id = $3
+    `, [newToken, newExpiresAt, invitationId]);
+
+    // Send email
+    if (emailReady) {
+      const acceptUrl = `http://localhost:3000/api/invitations/accept?token=${newToken}`;
+      await emailService.sendProjectInviteEmail({
+        to: email || invitation.invitee_email,
+        userName: invitation.invitee_email,
+        projectName: invitation.project_title,
+        invitedBy: invitation.inviter_name,
+        projectDescription: '',
+        acceptUrl: acceptUrl
+      });
+    }
+
+    res.json({ success: true, message: 'Invitation resent successfully' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

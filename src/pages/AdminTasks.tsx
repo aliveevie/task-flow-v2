@@ -4,10 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, MoreVertical } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, MoreVertical, FileCheck, Eye, FileSpreadsheet, Mail } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import TaskModal from "@/components/tasks/TaskModal";
+import SubmissionModal from "@/components/tasks/SubmissionModal";
+import ReviewSubmissionModal from "@/components/tasks/ReviewSubmissionModal";
+import TaskSubmissionsView from "@/components/tasks/TaskSubmissionsView";
+import ViewSubmissionFeedback from "@/components/tasks/ViewSubmissionFeedback";
+import ImportTasksModal from "@/components/tasks/ImportTasksModal";
+import InvitationStatusModal from "@/components/tasks/InvitationStatusModal";
 import { toast } from "sonner";
 
 const API_URL = "http://localhost:3000/api";
@@ -20,11 +26,37 @@ const AdminTasks = () => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
+  const [submissions, setSubmissions] = useState<Record<string, any[]>>({});
+  const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
+  const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<any>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isSubmissionsViewOpen, setIsSubmissionsViewOpen] = useState(false);
+  const [selectedTaskForSubmissions, setSelectedTaskForSubmissions] = useState<any>(null);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [selectedTaskForFeedback, setSelectedTaskForFeedback] = useState<any>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isInvitationStatusModalOpen, setIsInvitationStatusModalOpen] = useState(false);
+  const [selectedProjectForInvitations, setSelectedProjectForInvitations] = useState<string | null>(null);
 
   useEffect(() => {
+    const userData = localStorage.getItem("user");
+    if (userData) {
+      setCurrentUser(JSON.parse(userData));
+    }
     fetchTasks();
     fetchDefaultProject();
   }, []);
+
+  useEffect(() => {
+    // Fetch submissions for all tasks
+    if (tasks.length > 0) {
+      tasks.forEach((task) => {
+        fetchSubmissions(task.id);
+      });
+    }
+  }, [tasks]);
 
   const fetchDefaultProject = async () => {
     try {
@@ -83,7 +115,9 @@ const AdminTasks = () => {
           dueDate: task.due_date,
           status: task.status,
           priority: task.priority,
-          projectTitle: task.project_title
+          projectTitle: task.project_title,
+          projectId: task.project_id,
+          projectCreatorId: task.project_creator_id
         }));
         setTasks(formattedTasks);
       } else {
@@ -95,6 +129,49 @@ const AdminTasks = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchSubmissions = async (taskId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}/submissions`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSubmissions((prev) => ({
+          ...prev,
+          [taskId]: result.data || []
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching submissions:", error);
+    }
+  };
+
+  const isTaskAssignedToMe = (task: any) => {
+    return currentUser && task.assignee === currentUser.full_name;
+  };
+
+  const isTaskCreatedByMe = (task: any) => {
+    return currentUser && task.projectCreatorId === currentUser.id;
+  };
+
+  const getLatestSubmission = (taskId: string) => {
+    const taskSubmissions = submissions[taskId] || [];
+    return taskSubmissions.length > 0 ? taskSubmissions[0] : null;
+  };
+
+  const getPendingSubmissionsCount = (taskId: string) => {
+    const taskSubmissions = submissions[taskId] || [];
+    return taskSubmissions.filter((s: any) => s.status === 'pending').length;
+  };
+
+  const hasSubmission = (taskId: string) => {
+    return submissions[taskId] && submissions[taskId].length > 0;
   };
 
   const filteredTasks = tasks.filter(task => {
@@ -272,10 +349,41 @@ const AdminTasks = () => {
             <h1 className="text-3xl font-bold text-foreground">Task Management</h1>
             <p className="text-muted-foreground mt-1">Create, edit, and manage all tasks</p>
           </div>
-          <Button onClick={() => setIsTaskModalOpen(true)} className="shadow-md">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Task
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => {
+                if (defaultProjectId) {
+                  setSelectedProjectForInvitations(defaultProjectId);
+                  setIsInvitationStatusModalOpen(true);
+                } else {
+                  toast.error("No project found. Please create a project first.");
+                }
+              }} 
+              variant="outline"
+              className="shadow-md"
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              View Invitations
+            </Button>
+            <Button 
+              onClick={() => {
+                if (defaultProjectId) {
+                  setIsImportModalOpen(true);
+                } else {
+                  toast.error("No project found. Please create a project first.");
+                }
+              }} 
+              variant="outline"
+              className="shadow-md"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Import Tasks
+            </Button>
+            <Button onClick={() => setIsTaskModalOpen(true)} className="shadow-md">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Task
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -345,32 +453,148 @@ const AdminTasks = () => {
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{task.description}</p>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                       <span>Assigned to: {task.assignee}</span>
                       <span>•</span>
                       <span>Due: {task.dueDate}</span>
+                      {getLatestSubmission(task.id) && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <FileCheck className="w-3 h-3" />
+                            Latest: 
+                            <Badge variant="outline" className="ml-1">
+                              {getLatestSubmission(task.id).status}
+                            </Badge>
+                          </span>
+                        </>
+                      )}
+                      {isTaskCreatedByMe(task) && getPendingSubmissionsCount(task.id) > 0 && (
+                        <>
+                          <span>•</span>
+                          <Badge className="bg-yellow-500 text-white">
+                            {getPendingSubmissionsCount(task.id)} Pending Review
+                          </Badge>
+                        </>
+                      )}
                     </div>
+                    {/* Show submission status for assigned tasks */}
+                    {isTaskAssignedToMe(task) && getLatestSubmission(task.id) && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-muted-foreground">Your Submission:</span>
+                        {getLatestSubmission(task.id).status === 'approved' && (
+                          <Badge className="bg-green-500">✓ Approved</Badge>
+                        )}
+                        {getLatestSubmission(task.id).status === 'rejected' && (
+                          <Badge variant="destructive">✗ Rejected</Badge>
+                        )}
+                        {getLatestSubmission(task.id).status === 'revision-requested' && (
+                          <Badge className="bg-yellow-500">↻ Revision Requested</Badge>
+                        )}
+                        {getLatestSubmission(task.id).status === 'pending' && (
+                          <Badge variant="secondary">⏳ Pending Review</Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setEditingTask(task)}>
-                        <Pencil className="w-4 h-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="text-destructive"
+                  <div className="flex items-center gap-2">
+                    {isTaskAssignedToMe(task) && (
+                      <>
+                        {hasSubmission(task.id) ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled
+                            >
+                              <FileCheck className="w-4 h-4 mr-2" />
+                              Submitted
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedTaskForFeedback(task);
+                                setIsFeedbackModalOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-2" />
+                              View Feedback
+                            </Button>
+                            {getLatestSubmission(task.id)?.status === 'revision-requested' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedTaskForSubmission(task);
+                                  setIsSubmissionModalOpen(true);
+                                }}
+                              >
+                                <FileCheck className="w-4 h-4 mr-2" />
+                                Resubmit
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedTaskForSubmission(task);
+                              setIsSubmissionModalOpen(true);
+                            }}
+                          >
+                            <FileCheck className="w-4 h-4 mr-2" />
+                            Submit Work
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {isTaskCreatedByMe(task) && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTaskForSubmissions(task);
+                          setIsSubmissionsViewOpen(true);
+                        }}
                       >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <Eye className="w-4 h-4 mr-2" />
+                        {getLatestSubmission(task.id) ? 'View Submissions' : 'View Task'}
+                      </Button>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {isTaskCreatedByMe(task) && (
+                          <DropdownMenuItem 
+                            onClick={() => {
+                              setSelectedTaskForSubmissions(task);
+                              setIsSubmissionsViewOpen(true);
+                            }}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            View Submissions
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => setEditingTask(task)}>
+                          <Pencil className="w-4 h-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
               </div>
@@ -393,6 +617,99 @@ const AdminTasks = () => {
           onSubmit={handleEditTask}
           initialData={editingTask}
         />
+      )}
+
+      {selectedTaskForSubmission && (
+        <SubmissionModal
+          isOpen={isSubmissionModalOpen}
+          onClose={() => {
+            setIsSubmissionModalOpen(false);
+            setSelectedTaskForSubmission(null);
+          }}
+          taskId={selectedTaskForSubmission.id}
+          taskTitle={selectedTaskForSubmission.title}
+          onSuccess={() => {
+            fetchSubmissions(selectedTaskForSubmission.id);
+            fetchTasks();
+          }}
+        />
+      )}
+
+      {selectedSubmission && (
+        <ReviewSubmissionModal
+          isOpen={isReviewModalOpen}
+          onClose={() => {
+            setIsReviewModalOpen(false);
+            setSelectedSubmission(null);
+          }}
+          submission={selectedSubmission}
+          onSuccess={() => {
+            if (selectedSubmission) {
+              fetchSubmissions(selectedSubmission.task_id);
+              fetchTasks();
+            }
+          }}
+        />
+      )}
+
+      {selectedTaskForSubmissions && (
+        <TaskSubmissionsView
+          isOpen={isSubmissionsViewOpen}
+          onClose={() => {
+            setIsSubmissionsViewOpen(false);
+            setSelectedTaskForSubmissions(null);
+          }}
+          taskId={selectedTaskForSubmissions.id}
+          taskTitle={selectedTaskForSubmissions.title}
+          onReviewSuccess={() => {
+            fetchSubmissions(selectedTaskForSubmissions.id);
+            fetchTasks();
+          }}
+        />
+      )}
+
+      {selectedTaskForFeedback && (
+        <ViewSubmissionFeedback
+          isOpen={isFeedbackModalOpen}
+          onClose={() => {
+            setIsFeedbackModalOpen(false);
+            setSelectedTaskForFeedback(null);
+          }}
+          taskId={selectedTaskForFeedback.id}
+          taskTitle={selectedTaskForFeedback.title}
+          onRefresh={() => {
+            fetchTasks();
+            if (selectedTaskForFeedback) {
+              fetchSubmissions(selectedTaskForFeedback.id);
+            }
+          }}
+        />
+      )}
+
+      {defaultProjectId && (
+        <>
+          <ImportTasksModal
+            open={isImportModalOpen}
+            onOpenChange={setIsImportModalOpen}
+            projectId={defaultProjectId}
+            onSuccess={() => {
+              fetchTasks();
+              setIsImportModalOpen(false);
+            }}
+          />
+
+          <InvitationStatusModal
+            isOpen={isInvitationStatusModalOpen}
+            onClose={() => {
+              setIsInvitationStatusModalOpen(false);
+              setSelectedProjectForInvitations(null);
+            }}
+            projectId={selectedProjectForInvitations || defaultProjectId}
+            onRefresh={() => {
+              fetchTasks();
+            }}
+          />
+        </>
       )}
     </DashboardLayout>
   );

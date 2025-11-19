@@ -3,8 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { CheckCircle2, Clock, AlertCircle, FileCheck, Eye } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import SubmissionModal from "@/components/tasks/SubmissionModal";
+import ViewSubmissionFeedback from "@/components/tasks/ViewSubmissionFeedback";
 import { toast } from "sonner";
 
 const API_URL = "http://localhost:3000/api";
@@ -13,6 +15,11 @@ const UserDashboard = () => {
   const [userName, setUserName] = useState("User");
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
+  const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<any>(null);
+  const [submissions, setSubmissions] = useState<Record<string, any[]>>({});
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [selectedTaskForFeedback, setSelectedTaskForFeedback] = useState<any>(null);
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -22,6 +29,15 @@ const UserDashboard = () => {
     }
     fetchTasks();
   }, []);
+
+  useEffect(() => {
+    // Fetch submissions for all tasks
+    if (tasks.length > 0) {
+      tasks.forEach((task) => {
+        fetchSubmissions(task.id);
+      });
+    }
+  }, [tasks]);
 
   const fetchTasks = async () => {
     try {
@@ -56,6 +72,36 @@ const UserDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchSubmissions = async (taskId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${taskId}/submissions`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSubmissions((prev) => ({
+          ...prev,
+          [taskId]: result.data || []
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching submissions:", error);
+    }
+  };
+
+  const getLatestSubmission = (taskId: string) => {
+    const taskSubmissions = submissions[taskId] || [];
+    return taskSubmissions.length > 0 ? taskSubmissions[0] : null;
+  };
+
+  const hasSubmission = (taskId: string) => {
+    return submissions[taskId] && submissions[taskId].length > 0;
   };
 
   const stats = [
@@ -176,9 +222,74 @@ const UserDashboard = () => {
                       </div>
                       <p className="text-sm text-muted-foreground">{task.description}</p>
                       <p className="text-sm text-muted-foreground">Due: {task.dueDate}</p>
+                      {getLatestSubmission(task.id) && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-xs text-muted-foreground">Submission Status:</span>
+                          {getLatestSubmission(task.id).status === 'approved' && (
+                            <Badge className="bg-green-500">✓ Approved</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'rejected' && (
+                            <Badge variant="destructive">✗ Rejected</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'revision-requested' && (
+                            <Badge className="bg-yellow-500">↻ Revision Requested</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'pending' && (
+                            <Badge variant="secondary">⏳ Pending Review</Badge>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {hasSubmission(task.id) ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled
+                        >
+                          <FileCheck className="w-4 h-4 mr-2" />
+                          Submitted
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTaskForFeedback(task);
+                            setIsFeedbackModalOpen(true);
+                          }}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Feedback
+                        </Button>
+                        {getLatestSubmission(task.id)?.status === 'revision-requested' && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedTaskForSubmission(task);
+                              setIsSubmissionModalOpen(true);
+                            }}
+                          >
+                            <FileCheck className="w-4 h-4 mr-2" />
+                            Resubmit
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTaskForSubmission(task);
+                          setIsSubmissionModalOpen(true);
+                        }}
+                      >
+                        <FileCheck className="w-4 h-4 mr-2" />
+                        Submit Work
+                      </Button>
+                    )}
                     <Select
                       value={task.status}
                       onValueChange={(value) => handleStatusChange(task.id, value)}
@@ -201,6 +312,43 @@ const UserDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {selectedTaskForSubmission && (
+        <SubmissionModal
+          isOpen={isSubmissionModalOpen}
+          onClose={() => {
+            setIsSubmissionModalOpen(false);
+            setSelectedTaskForSubmission(null);
+          }}
+          taskId={selectedTaskForSubmission.id}
+          taskTitle={selectedTaskForSubmission.title}
+          onSuccess={() => {
+            fetchTasks();
+            if (selectedTaskForSubmission) {
+              fetchSubmissions(selectedTaskForSubmission.id);
+            }
+            toast.success("Proof of work submitted successfully!");
+          }}
+        />
+      )}
+
+      {selectedTaskForFeedback && (
+        <ViewSubmissionFeedback
+          isOpen={isFeedbackModalOpen}
+          onClose={() => {
+            setIsFeedbackModalOpen(false);
+            setSelectedTaskForFeedback(null);
+          }}
+          taskId={selectedTaskForFeedback.id}
+          taskTitle={selectedTaskForFeedback.title}
+          onRefresh={() => {
+            fetchTasks();
+            if (selectedTaskForFeedback) {
+              fetchSubmissions(selectedTaskForFeedback.id);
+            }
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 };

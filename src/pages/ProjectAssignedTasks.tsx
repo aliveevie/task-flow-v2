@@ -3,8 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, CheckCircle2, Clock, AlertCircle, Inbox } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, AlertCircle, Inbox, FileCheck } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import SubmissionModal from "@/components/tasks/SubmissionModal";
 import { toast } from "sonner";
 
 const API_URL = "http://localhost:3000/api";
@@ -15,6 +16,8 @@ const ProjectAssignedTasks = () => {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
+  const [selectedTaskForSubmission, setSelectedTaskForSubmission] = useState<any>(null);
 
   useEffect(() => {
     if (projectId) {
@@ -233,6 +236,19 @@ const ProjectAssignedTasks = () => {
                         )}
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTaskForSubmission(task);
+                          setIsSubmissionModalOpen(true);
+                        }}
+                      >
+                        <FileCheck className="w-4 h-4 mr-2" />
+                        Submit Work
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -240,6 +256,22 @@ const ProjectAssignedTasks = () => {
           </CardContent>
         </Card>
       </div>
+
+      {selectedTaskForSubmission && (
+        <SubmissionModal
+          isOpen={isSubmissionModalOpen}
+          onClose={() => {
+            setIsSubmissionModalOpen(false);
+            setSelectedTaskForSubmission(null);
+          }}
+          taskId={selectedTaskForSubmission.id}
+          taskTitle={selectedTaskForSubmission.title || selectedTaskForSubmission.deliverables}
+          onSuccess={() => {
+            fetchProjectAndTasks();
+            toast.success("Proof of work submitted successfully!");
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 };
