@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, Pencil, Trash2, MoreVertical, FileCheck, Eye, FileSpreadsheet, Mail } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import TaskModal from "@/components/tasks/TaskModal";
@@ -39,6 +40,7 @@ const AdminTasks = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isInvitationStatusModalOpen, setIsInvitationStatusModalOpen] = useState(false);
   const [selectedProjectForInvitations, setSelectedProjectForInvitations] = useState<string | null>(null);
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -299,7 +301,7 @@ const AdminTasks = () => {
     }
   };
 
-  const handleDeleteTask = async (taskId: number) => {
+  const handleDeleteTask = async (taskId: string) => {
     try {
       const response = await fetch(`${API_URL}/tasks/${taskId}`, {
         method: "DELETE",
@@ -313,6 +315,12 @@ const AdminTasks = () => {
       if (result.success) {
         toast.success("Task deleted successfully!");
         fetchTasks(); // Refresh tasks list
+        // Remove from selected tasks if it was selected
+        setSelectedTasks(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(taskId);
+          return newSet;
+        });
       } else {
         toast.error(result.error || "Failed to delete task");
       }
@@ -321,6 +329,82 @@ const AdminTasks = () => {
       toast.error("Failed to delete task");
     }
   };
+
+  const handleBulkDelete = async () => {
+    if (selectedTasks.size === 0) {
+      toast.error("No tasks selected");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedTasks.size} task(s)?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const taskIds = Array.from(selectedTasks);
+      let successCount = 0;
+      let failCount = 0;
+
+      // Delete tasks one by one
+      for (const taskId of taskIds) {
+        try {
+          const response = await fetch(`${API_URL}/tasks/${taskId}`, {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch (error) {
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Successfully deleted ${successCount} task(s)`);
+        fetchTasks();
+        setSelectedTasks(new Set());
+      }
+
+      if (failCount > 0) {
+        toast.error(`Failed to delete ${failCount} task(s)`);
+      }
+    } catch (error) {
+      console.error("Error deleting tasks:", error);
+      toast.error("Failed to delete tasks");
+    }
+  };
+
+  const handleSelectTask = (taskId: string, checked: boolean) => {
+    setSelectedTasks(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(taskId);
+      } else {
+        newSet.delete(taskId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTasks(new Set(filteredTasks.map(task => task.id)));
+    } else {
+      setSelectedTasks(new Set());
+    }
+  };
+
+  const isAllSelected = filteredTasks.length > 0 && selectedTasks.size === filteredTasks.length;
+  const isIndeterminate = selectedTasks.size > 0 && selectedTasks.size < filteredTasks.length;
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -350,6 +434,16 @@ const AdminTasks = () => {
             <p className="text-muted-foreground mt-1">Create, edit, and manage all tasks</p>
           </div>
           <div className="flex gap-2">
+            {selectedTasks.size > 0 && (
+              <Button 
+                onClick={handleBulkDelete}
+                variant="destructive"
+                className="shadow-md"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Selected ({selectedTasks.size})
+              </Button>
+            )}
             <Button 
               onClick={() => {
                 if (defaultProjectId) {
@@ -418,8 +512,23 @@ const AdminTasks = () => {
         {/* Tasks Table */}
         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>My Tasks ({filteredTasks.length})</CardTitle>
-            <CardDescription>Tasks assigned to you or created by you</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>My Tasks ({filteredTasks.length})</CardTitle>
+                <CardDescription>Tasks assigned to you or created by you</CardDescription>
+              </div>
+              {filteredTasks.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={isAllSelected}
+                    onCheckedChange={handleSelectAll}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedTasks.size > 0 ? `${selectedTasks.size} selected` : 'Select all'}
+                  </span>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -440,64 +549,72 @@ const AdminTasks = () => {
                 {filteredTasks.map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                  className="flex items-start gap-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors"
                 >
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h3 className="font-semibold text-lg">{task.title}</h3>
-                      <Badge variant={getPriorityColor(task.priority) as any}>
-                        {task.priority}
-                      </Badge>
-                      <Badge variant={getStatusColor(task.status) as any}>
-                        {task.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{task.description}</p>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                      <span>Assigned to: {task.assignee}</span>
-                      <span>•</span>
-                      <span>Due: {task.dueDate}</span>
-                      {getLatestSubmission(task.id) && (
-                        <>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <FileCheck className="w-3 h-3" />
-                            Latest: 
-                            <Badge variant="outline" className="ml-1">
-                              {getLatestSubmission(task.id).status}
+                  <div className="flex items-center pt-1">
+                    <Checkbox
+                      checked={selectedTasks.has(task.id)}
+                      onCheckedChange={(checked) => handleSelectTask(task.id, checked as boolean)}
+                      className="cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex-1 flex items-center justify-between">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="font-semibold text-lg">{task.title}</h3>
+                        <Badge variant={getPriorityColor(task.priority) as any}>
+                          {task.priority}
+                        </Badge>
+                        <Badge variant={getStatusColor(task.status) as any}>
+                          {task.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{task.description}</p>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                        <span>Assigned to: {task.assignee}</span>
+                        <span>•</span>
+                        <span>Due: {task.dueDate}</span>
+                        {getLatestSubmission(task.id) && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <FileCheck className="w-3 h-3" />
+                              Latest: 
+                              <Badge variant="outline" className="ml-1">
+                                {getLatestSubmission(task.id).status}
+                              </Badge>
+                            </span>
+                          </>
+                        )}
+                        {isTaskCreatedByMe(task) && getPendingSubmissionsCount(task.id) > 0 && (
+                          <>
+                            <span>•</span>
+                            <Badge className="bg-yellow-500 text-white">
+                              {getPendingSubmissionsCount(task.id)} Pending Review
                             </Badge>
-                          </span>
-                        </>
-                      )}
-                      {isTaskCreatedByMe(task) && getPendingSubmissionsCount(task.id) > 0 && (
-                        <>
-                          <span>•</span>
-                          <Badge className="bg-yellow-500 text-white">
-                            {getPendingSubmissionsCount(task.id)} Pending Review
-                          </Badge>
-                        </>
-                      )}
-                    </div>
-                    {/* Show submission status for assigned tasks */}
-                    {isTaskAssignedToMe(task) && getLatestSubmission(task.id) && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-xs text-muted-foreground">Your Submission:</span>
-                        {getLatestSubmission(task.id).status === 'approved' && (
-                          <Badge className="bg-green-500">✓ Approved</Badge>
-                        )}
-                        {getLatestSubmission(task.id).status === 'rejected' && (
-                          <Badge variant="destructive">✗ Rejected</Badge>
-                        )}
-                        {getLatestSubmission(task.id).status === 'revision-requested' && (
-                          <Badge className="bg-yellow-500">↻ Revision Requested</Badge>
-                        )}
-                        {getLatestSubmission(task.id).status === 'pending' && (
-                          <Badge variant="secondary">⏳ Pending Review</Badge>
+                          </>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
+                      {/* Show submission status for assigned tasks */}
+                      {isTaskAssignedToMe(task) && getLatestSubmission(task.id) && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-xs text-muted-foreground">Your Submission:</span>
+                          {getLatestSubmission(task.id).status === 'approved' && (
+                            <Badge className="bg-green-500">✓ Approved</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'rejected' && (
+                            <Badge variant="destructive">✗ Rejected</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'revision-requested' && (
+                            <Badge className="bg-yellow-500">↻ Revision Requested</Badge>
+                          )}
+                          {getLatestSubmission(task.id).status === 'pending' && (
+                            <Badge variant="secondary">⏳ Pending Review</Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
                     {isTaskAssignedToMe(task) && (
                       <>
                         {hasSubmission(task.id) ? (
@@ -594,6 +711,7 @@ const AdminTasks = () => {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
                 </div>
               ))}
