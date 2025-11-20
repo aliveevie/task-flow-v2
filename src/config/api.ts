@@ -9,9 +9,10 @@ const getApiUrl = (): string => {
     
     // Production domain
     if (hostname === 'taskflow.galaxyitt.com.ng' || hostname === 'www.taskflow.galaxyitt.com.ng') {
-      // Use same domain with proxy (avoids mixed content and CORS issues)
-      // .htaccess will proxy /api/* requests to http://10.1.1.205:3000/api/*
-      return `${protocol}//${hostname}/api`;
+      // Use direct IP - CORS is configured on server to allow this domain
+      // Note: This will cause mixed content warning, but will work
+      // For production, consider setting up API on subdomain or enabling HTTPS on backend
+      return 'http://10.1.1.205:3000/api';
     }
     
     // Development/local

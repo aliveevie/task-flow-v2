@@ -1,28 +1,12 @@
 # TaskFlow - cPanel Deployment Configuration
-# This file ensures proper routing, API calls, and asset loading
-
-# Enable required modules for proxying
-<IfModule mod_proxy.c>
-  ProxyPreserveHost On
-  ProxyRequests Off
-</IfModule>
+# Simplified version without proxy (proxy may not be enabled on cPanel)
 
 # Enable Rewrite Engine
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  
-  # Enable proxy module
-  <IfModule mod_proxy.c>
-    ProxyPreserveHost On
-  </IfModule>
 
-  # Proxy API requests to backend server
-  # This allows HTTPS frontend to communicate with HTTP backend through same domain
-  RewriteCond %{REQUEST_URI} ^/api/
-  RewriteRule ^api/(.*)$ http://10.1.1.205:3000/api/$1 [P,L]
-  
-  # Handle Angular/React Router - Send all requests to index.html except files that exist
+  # Handle React Router - Send all requests to index.html except files that exist
   # Don't rewrite files or directories that exist
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
@@ -48,17 +32,6 @@
   
   # Referrer Policy
   Header set Referrer-Policy "strict-origin-when-cross-origin"
-  
-  # Content Security Policy (adjust as needed)
-  # Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' http://10.1.1.205:3000 https:;"
-</IfModule>
-
-# CORS Headers (if API is on different domain)
-<IfModule mod_headers.c>
-  # Allow API calls from your domain
-  # Header set Access-Control-Allow-Origin "*"
-  # Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-  # Header set Access-Control-Allow-Headers "Content-Type, Authorization"
 </IfModule>
 
 # MIME Types for proper asset loading
@@ -177,16 +150,3 @@ Options -Indexes
   Order allow,deny
   Deny from all
 </FilesMatch>
-
-# Custom Error Pages (optional)
-# ErrorDocument 404 /index.html
-# ErrorDocument 500 /index.html
-
-# PHP Settings (if needed)
-<IfModule mod_php.c>
-  php_value upload_max_filesize 10M
-  php_value post_max_size 10M
-  php_value max_execution_time 300
-  php_value max_input_time 300
-</IfModule>
-
