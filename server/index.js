@@ -780,6 +780,119 @@ app.get('/api/auth/verify-email', async (req, res) => {
   }
 });
 
+// Resend verification email endpoint
+app.post('/api/auth/resend-verification', async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database not connected'
+    });
+  }
+
+  if (!emailReady) {
+    return res.status(503).json({
+      success: false,
+      error: 'Email service not configured'
+    });
+  }
+
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+    }
+
+    // Check if user exists
+    const userResult = await db.query(
+      'SELECT id, email, full_name, is_email_verified FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found with this email'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if email is already verified
+    if (user.is_email_verified) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is already verified',
+        message: 'Please login instead'
+      });
+    }
+
+    // Generate new verification token
+    const verificationToken = generateVerificationToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Delete old unverified tokens for this user
+    await db.query(
+      `DELETE FROM email_verification_tokens 
+       WHERE user_id = $1 AND verified_at IS NULL`,
+      [user.id]
+    );
+
+    // Insert new verification token
+    await db.query(
+      `INSERT INTO email_verification_tokens (user_id, token, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, verificationToken, expiresAt]
+    );
+
+    // Send verification email
+    const verificationLink = `http://10.1.1.205:3000/api/auth/verify-email?token=${verificationToken}`;
+    
+    try {
+      await emailService.sendVerificationEmail({
+        to: email,
+        userName: user.full_name,
+        verificationLink,
+        expiryTime: '24 hours'
+      });
+
+      console.log(`✅ Verification email resent to: ${email}`);
+
+      // Create audit log
+      await db.query(
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, 'verification_email_resent', 'user', user.id, JSON.stringify({ email })]
+      );
+
+      res.json({
+        success: true,
+        message: 'Verification email sent successfully!',
+        data: {
+          email: user.email
+        }
+      });
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send verification email',
+        message: emailError.message
+      });
+    }
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to resend verification email'
+    });
+  }
+});
+
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   if (!dbConnected || !db) {

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Mail, AlertCircle } from "lucide-react";
+import { CheckCircle2, Mail, AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -15,6 +15,9 @@ const Auth = () => {
   const [showVerificationMessage, setShowVerificationMessage] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [invitationToken, setInvitationToken] = useState("");
+  const [showUnverifiedError, setShowUnverifiedError] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
   
   // Check for invitation token or messages in URL
   useEffect(() => {
@@ -130,6 +133,11 @@ const Auth = () => {
           }
         }, 500);
       } else {
+        // Check if user exists but email not verified
+        if (data.error === 'User exists but email not verified' || data.message?.includes('email not verified')) {
+          setShowUnverifiedError(true);
+          setUnverifiedEmail(loginData.email);
+        }
         toast.error(data.error || "Login failed");
       }
     } catch (error) {
@@ -233,13 +241,56 @@ const Auth = () => {
           password: ""
         });
       } else {
-        toast.error(data.error || data.message || "Registration failed");
+        // Check if user exists but email not verified
+        if (data.error === 'User exists but email not verified') {
+          setShowUnverifiedError(true);
+          setUnverifiedEmail(registerData.email);
+          toast.error(data.error || data.message || "Registration failed");
+        } else {
+          toast.error(data.error || data.message || "Registration failed");
+        }
       }
     } catch (error) {
       console.error("Registration error:", error);
       toast.error("Failed to connect to server");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setIsResendingEmail(true);
+    const emailToResend = unverifiedEmail || registeredEmail;
+    
+    if (!emailToResend) {
+      toast.error("No email address found");
+      setIsResendingEmail(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: emailToResend })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Verification email sent! Please check your inbox.");
+        setShowVerificationMessage(true);
+        setShowUnverifiedError(false);
+      } else {
+        toast.error(data.error || "Failed to resend verification email");
+      }
+    } catch (error) {
+      console.error("Resend verification error:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setIsResendingEmail(false);
     }
   };
 
@@ -268,6 +319,42 @@ const Auth = () => {
                   We've sent a verification link to <strong>{registeredEmail}</strong>. 
                   Please verify your email before logging in.
                 </AlertDescription>
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResendVerification}
+                    disabled={isResendingEmail}
+                    className="w-full"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isResendingEmail ? 'animate-spin' : ''}`} />
+                    {isResendingEmail ? "Sending..." : "Resend Verification Email"}
+                  </Button>
+                </div>
+              </Alert>
+            )}
+
+            {showUnverifiedError && (
+              <Alert className="mb-4 border-red-500 bg-red-50 dark:bg-red-950">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800 dark:text-red-200">
+                  <strong>User exists but email not verified</strong><br />
+                  Please check your email for the verification link or request a new one.
+                </AlertDescription>
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResendVerification}
+                    disabled={isResendingEmail}
+                    className="w-full border-red-300 text-red-700 hover:bg-red-100 dark:hover:bg-red-900"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isResendingEmail ? 'animate-spin' : ''}`} />
+                    {isResendingEmail ? "Sending..." : "Resend Verification Email"}
+                  </Button>
+                </div>
               </Alert>
             )}
             
