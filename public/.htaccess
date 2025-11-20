@@ -1,15 +1,26 @@
 # TaskFlow - cPanel Deployment Configuration
 # This file ensures proper routing, API calls, and asset loading
 
+# Enable required modules for proxying
+<IfModule mod_proxy.c>
+  ProxyPreserveHost On
+  ProxyRequests Off
+</IfModule>
+
 # Enable Rewrite Engine
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+  
+  # Enable proxy module
+  <IfModule mod_proxy.c>
+    ProxyPreserveHost On
+  </IfModule>
 
-  # Proxy API requests to backend server (if API is on different server)
-  # Uncomment and configure if your API is on a different server
-  # RewriteCond %{REQUEST_URI} ^/api/
-  # RewriteRule ^api/(.*)$ http://10.1.1.205:3000/api/$1 [P,L]
+  # Proxy API requests to backend server
+  # This allows HTTPS frontend to communicate with HTTP backend through same domain
+  RewriteCond %{REQUEST_URI} ^/api/
+  RewriteRule ^api/(.*)$ http://10.1.1.205:3000/api/$1 [P,L]
   
   # Handle Angular/React Router - Send all requests to index.html except files that exist
   # Don't rewrite files or directories that exist
