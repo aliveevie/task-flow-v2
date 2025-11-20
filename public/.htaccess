@@ -6,6 +6,11 @@
   RewriteEngine On
   RewriteBase /
 
+  # Proxy API requests to backend server (if API is on different server)
+  # Uncomment and configure if your API is on a different server
+  # RewriteCond %{REQUEST_URI} ^/api/
+  # RewriteRule ^api/(.*)$ http://10.1.1.205:3000/api/$1 [P,L]
+  
   # Handle Angular/React Router - Send all requests to index.html except files that exist
   # Don't rewrite files or directories that exist
   RewriteCond %{REQUEST_FILENAME} !-f

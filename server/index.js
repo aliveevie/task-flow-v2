@@ -23,8 +23,49 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS Configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('CORS: Request with no origin, allowing');
+      return callback(null, true);
+    }
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'https://taskflow.galaxyitt.com.ng',
+      'http://taskflow.galaxyitt.com.ng',
+      'https://www.taskflow.galaxyitt.com.ng',
+      'http://www.taskflow.galaxyitt.com.ng',
+      'http://localhost:8080',
+      'http://localhost:3000',
+      'http://127.0.0.1:8080',
+      'http://127.0.0.1:3000',
+      'http://10.1.1.205:8080',
+      'http://10.1.1.205:3000'
+    ];
+    
+    console.log(`CORS: Checking origin: ${origin}`);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log(`CORS: Origin ${origin} is allowed`);
+      callback(null, true);
+    } else {
+      console.log(`CORS: Origin ${origin} is NOT allowed. Allowed origins:`, allowedOrigins);
+      callback(new Error(`Not allowed by CORS: ${origin}`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Serve static files from public directory (for logo)

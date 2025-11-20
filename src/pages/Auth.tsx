@@ -8,8 +8,7 @@ import { CheckCircle2, Mail, AlertCircle, RefreshCw, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-
-const API_URL = "http://10.1.1.205:3000/api";
+import { API_URL } from "@/config/api";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
