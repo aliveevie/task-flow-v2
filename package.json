@@ -17,7 +17,11 @@
     "server:pm2:delete": "pm2 delete task-flow-server",
     "server:pm2:logs": "pm2 logs task-flow-server",
     "server:pm2:status": "pm2 status",
-    "server:pm2:monit": "pm2 monit"
+    "server:pm2:monit": "pm2 monit",
+    "monitor:start": "cd server && node git-monitor.js",
+    "monitor:pm2": "cd server && pm2 start git-monitor.js --name git-monitor --interpreter node",
+    "monitor:stop": "pm2 stop git-monitor",
+    "monitor:logs": "pm2 logs git-monitor"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
