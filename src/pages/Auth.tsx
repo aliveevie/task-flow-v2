@@ -585,6 +585,21 @@ const Auth = () => {
             </Tabs>
           </CardContent>
         </Card>
+        
+        {/* Footer */}
+        <div className="text-center mt-8">
+          <p className="text-sm text-muted-foreground">
+            Powered by{" "}
+            <a
+              href="https://www.galaxyitt.com.ng"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              GalaxyITT
+            </a>
+          </p>
+        </div>
       </div>
 
       {/* Forgot Password Dialog */}
