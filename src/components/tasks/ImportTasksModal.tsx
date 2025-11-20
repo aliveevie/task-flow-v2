@@ -258,7 +258,7 @@ const ImportTasksModal = ({ open, onOpenChange, projectId, onSuccess }: ImportTa
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/tasks/import`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/projects/${projectId}/tasks/import`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

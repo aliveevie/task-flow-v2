@@ -26,7 +26,7 @@ const AdminProjects = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3000/api/projects', {
+      const response = await fetch('http://10.1.1.205:3000/api/projects', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -43,7 +43,7 @@ const AdminProjects = () => {
       // Fetch task counts and member counts for each project
       const projectsWithCounts = await Promise.all(
         projectsData.map(async (project: any) => {
-          const tasksResponse = await fetch(`http://localhost:3000/api/projects/${project.id}/tasks`, {
+          const tasksResponse = await fetch(`http://10.1.1.205:3000/api/projects/${project.id}/tasks`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -54,7 +54,7 @@ const AdminProjects = () => {
           const totalTasks = tasks.length;
           const completedTasks = tasks.filter((t: any) => t.status === 'completed' || t.status === 'Completed').length;
 
-          const membersResponse = await fetch(`http://localhost:3000/api/projects/${project.id}/members`, {
+          const membersResponse = await fetch(`http://10.1.1.205:3000/api/projects/${project.id}/members`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -96,7 +96,7 @@ const AdminProjects = () => {
 
       const user = JSON.parse(userData);
 
-      const response = await fetch('http://localhost:3000/api/projects', {
+      const response = await fetch('http://10.1.1.205:3000/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +127,7 @@ const AdminProjects = () => {
 
   const handleEditProject = async (data: any) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/${editingProject.id}`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/projects/${editingProject.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ const AdminProjects = () => {
 
   const handleDeleteProject = async (projectId: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/${projectId}`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/projects/${projectId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

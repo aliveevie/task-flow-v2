@@ -60,7 +60,7 @@ npm run dev
 npm start
 ```
 
-The server will start on `http://localhost:3000`
+The server will start on `http://10.1.1.205:3000`
 
 ## API Endpoints
 

@@ -17,7 +17,7 @@ import ImportTasksModal from "@/components/tasks/ImportTasksModal";
 import InvitationStatusModal from "@/components/tasks/InvitationStatusModal";
 import { toast } from "sonner";
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://10.1.1.205:3000/api";
 
 const AdminTasks = () => {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);

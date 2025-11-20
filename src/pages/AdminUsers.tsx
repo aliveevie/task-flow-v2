@@ -12,7 +12,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import InviteUsersModal from "@/components/projects/InviteUsersModal";
 import { toast } from "sonner";
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://10.1.1.205:3000/api";
 
 const AdminUsers = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);

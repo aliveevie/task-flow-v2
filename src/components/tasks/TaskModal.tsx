@@ -95,7 +95,7 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
 
   const fetchProjectMembers = async () => {
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/members`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/projects/${projectId}/members`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -118,7 +118,7 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
   const fetchAllUsers = async () => {
     try {
       // Fetch all users who have accepted invitations (are project members)
-      const response = await fetch(`http://localhost:3000/api/users/project-members`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/users/project-members`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -137,7 +137,7 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
       } else {
         console.error('Failed to fetch project members:', result.error);
         // Fallback to fetching all users
-        const fallbackResponse = await fetch(`http://localhost:3000/api/users`, {
+        const fallbackResponse = await fetch(`http://10.1.1.205:3000/api/users`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
@@ -156,7 +156,7 @@ const TaskModal = ({ open, onOpenChange, onSubmit, initialData, projectId }: Tas
       console.error("Error fetching users:", error);
       // Final fallback to fetching all users
       try {
-        const response = await fetch(`http://localhost:3000/api/users`, {
+        const response = await fetch(`http://10.1.1.205:3000/api/users`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }

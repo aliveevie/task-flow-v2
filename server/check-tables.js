@@ -58,7 +58,7 @@ async function checkTables() {
   if (!projectsError && !tasksError && !membersError) {
     console.log('🎉 SUCCESS! All tables exist and are accessible!');
     console.log('\n✅ Your database is ready to use!');
-    console.log('✅ Server is running at: http://localhost:3000');
+    console.log('✅ Server is running at: http://10.1.1.205:3000');
     console.log('✅ API endpoints are ready');
   } else {
     console.log('⚠️  Some tables have errors (possibly RLS policies)');

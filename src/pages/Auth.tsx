@@ -8,7 +8,7 @@ import { CheckCircle2, Mail, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://10.1.1.205:3000/api";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);

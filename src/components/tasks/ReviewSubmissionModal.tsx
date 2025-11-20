@@ -52,7 +52,7 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:3000/api/submissions/${submission.id}/review`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/submissions/${submission.id}/review`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -95,7 +95,7 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`http://localhost:3000${fileUrl}`, "_blank");
+    window.open(`http://10.1.1.205:3000${fileUrl}`, "_blank");
   };
 
   if (!submission) return null;

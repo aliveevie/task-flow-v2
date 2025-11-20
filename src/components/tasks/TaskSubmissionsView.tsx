@@ -45,7 +45,7 @@ const TaskSubmissionsView = ({ isOpen, onClose, taskId, taskTitle, onReviewSucce
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:3000/api/tasks/${taskId}/submissions`, {
+      const response = await fetch(`http://10.1.1.205:3000/api/tasks/${taskId}/submissions`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -19,7 +19,7 @@ interface UserData {
   role: string;
 }
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://10.1.1.205:3000/api";
 
 const DashboardLayout = ({ children, role }: DashboardLayoutProps) => {
   const [notificationCount, setNotificationCount] = useState(0);

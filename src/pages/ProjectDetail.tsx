@@ -15,7 +15,7 @@ import InviteUsersModal from "@/components/projects/InviteUsersModal";
 import ImportTasksModal from "@/components/projects/ImportTasksModal";
 import { toast } from "sonner";
 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://10.1.1.205:3000/api";
 
 // Helper function to calculate timelines from dates
 const calculateTimelines = (dateAssigned: string, dueDate: string): string => {
