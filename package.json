@@ -8,7 +8,16 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "install:all": "npm install && cd server && npm install",
+    "postinstall": "cd server && npm install",
+    "server:pm2:start": "cd server && pm2 start index.js --name task-flow-server",
+    "server:pm2:stop": "pm2 stop task-flow-server",
+    "server:pm2:restart": "pm2 restart task-flow-server",
+    "server:pm2:delete": "pm2 delete task-flow-server",
+    "server:pm2:logs": "pm2 logs task-flow-server",
+    "server:pm2:status": "pm2 status",
+    "server:pm2:monit": "pm2 monit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -51,6 +60,7 @@
     "next-themes": "^0.3.0",
     "papaparse": "^5.5.3",
     "pdf-parse": "^2.4.5",
+    "pm2": "^6.0.13",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",

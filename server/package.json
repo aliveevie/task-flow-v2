@@ -7,6 +7,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon --watch index.js",
+    "pm2:start": "pm2 start index.js --name task-flow-server",
+    "pm2:stop": "pm2 stop task-flow-server",
+    "pm2:restart": "pm2 restart task-flow-server",
+    "pm2:delete": "pm2 delete task-flow-server",
+    "pm2:logs": "pm2 logs task-flow-server",
+    "pm2:status": "pm2 status",
+    "pm2:monit": "pm2 monit",
     "setup-db": "node setup-database.js",
     "create-tables": "node create-tables-now.js",
     "create-tables-admin": "node create-tables-admin.js",
@@ -36,5 +43,8 @@
     "pdf-parse": "^2.4.5",
     "pg": "^8.16.3",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "pm2": "^5.3.0"
   }
 }

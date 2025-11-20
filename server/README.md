@@ -129,6 +129,3 @@ The server will start on `http://localhost:3000`
 - ✅ Supabase integration with Row Level Security
 - ✅ Automatic timestamp updates
 - ✅ Error handling and validation
-
-
-
