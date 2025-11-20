@@ -893,6 +893,266 @@ app.post('/api/auth/resend-verification', async (req, res) => {
   }
 });
 
+// Forgot password endpoint - Request password reset
+app.post('/api/auth/forgot-password', async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database not connected'
+    });
+  }
+
+  if (!emailReady) {
+    return res.status(503).json({
+      success: false,
+      error: 'Email service not configured'
+    });
+  }
+
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required'
+      });
+    }
+
+    // Check if user exists
+    const userResult = await db.query(
+      'SELECT id, email, full_name, is_email_verified FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      // Don't reveal if user exists or not for security
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if email is verified
+    if (!user.is_email_verified) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email not verified',
+        message: 'Please verify your email first before resetting your password'
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Delete old unused tokens for this user
+    await db.query(
+      `DELETE FROM password_reset_tokens 
+       WHERE user_id = $1 AND (used_at IS NULL OR expires_at < NOW())`,
+      [user.id]
+    );
+
+    // Insert new reset token
+    await db.query(
+      `INSERT INTO password_reset_tokens (user_id, token, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, resetToken, expiresAt]
+    );
+
+    // Send password reset email
+    const resetLink = `http://10.1.1.205:3000/auth/reset-password?token=${resetToken}`;
+    
+    try {
+      await emailService.sendPasswordResetEmail({
+        to: email,
+        userName: user.full_name,
+        resetLink,
+        expiryTime: '1 hour'
+      });
+
+      console.log(`✅ Password reset email sent to: ${email}`);
+
+      // Create audit log
+      await db.query(
+        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, 'password_reset_requested', 'user', user.id, JSON.stringify({ email })]
+      );
+
+      res.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      });
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send password reset email',
+        message: emailError.message
+      });
+    }
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to process password reset request'
+    });
+  }
+});
+
+// Verify reset token endpoint
+app.get('/api/auth/verify-reset-token', async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database not connected'
+    });
+  }
+
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token is required'
+      });
+    }
+
+    // Find reset token
+    const tokenResult = await db.query(
+      `SELECT prt.*, u.email, u.full_name
+       FROM password_reset_tokens prt
+       JOIN users u ON u.id = prt.user_id
+       WHERE prt.token = $1 AND prt.used_at IS NULL`,
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired reset token'
+      });
+    }
+
+    const tokenData = tokenResult.rows[0];
+
+    // Check if token expired
+    if (new Date() > new Date(tokenData.expires_at)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token has expired'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Reset token is valid',
+      data: {
+        email: tokenData.email
+      }
+    });
+  } catch (error) {
+    console.error('Verify reset token error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Reset password endpoint
+app.post('/api/auth/reset-password', async (req, res) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database not connected'
+    });
+  }
+
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token and new password are required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Find reset token
+    const tokenResult = await db.query(
+      `SELECT prt.*, u.id as user_id, u.email
+       FROM password_reset_tokens prt
+       JOIN users u ON u.id = prt.user_id
+       WHERE prt.token = $1 AND prt.used_at IS NULL`,
+      [token]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired reset token'
+      });
+    }
+
+    const tokenData = tokenResult.rows[0];
+
+    // Check if token expired
+    if (new Date() > new Date(tokenData.expires_at)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token has expired'
+      });
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update user password
+    await db.query(
+      `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      [passwordHash, tokenData.user_id]
+    );
+
+    // Mark token as used
+    await db.query(
+      `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`,
+      [tokenData.id]
+    );
+
+    // Create audit log
+    await db.query(
+      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id)
+       VALUES ($1, $2, $3, $4)`,
+      [tokenData.user_id, 'password_reset', 'user', tokenData.user_id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully. You can now login with your new password.'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to reset password'
+    });
+  }
+});
+
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   if (!dbConnected || !db) {

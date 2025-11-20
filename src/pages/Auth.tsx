@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Mail, AlertCircle, RefreshCw } from "lucide-react";
+import { CheckCircle2, Mail, AlertCircle, RefreshCw, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const API_URL = "http://10.1.1.205:3000/api";
 
@@ -18,6 +19,16 @@ const Auth = () => {
   const [showUnverifiedError, setShowUnverifiedError] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState("");
   const [isResendingEmail, setIsResendingEmail] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetToken, setResetToken] = useState("");
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [resetPasswordData, setResetPasswordData] = useState({
+    password: "",
+    confirmPassword: ""
+  });
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   
   // Check for invitation token or messages in URL
   useEffect(() => {
@@ -25,6 +36,7 @@ const Auth = () => {
     const token = params.get('invitation');
     const action = params.get('action');
     const message = params.get('message');
+    const resetTokenParam = params.get('token');
     
     if (token) {
       setInvitationToken(token);
@@ -38,6 +50,13 @@ const Auth = () => {
     
     if (message === 'invitation-accepted') {
       toast.success("Invitation accepted! Please login to access your projects.");
+    }
+
+    // Check for password reset token
+    if (resetTokenParam && window.location.pathname.includes('/reset-password')) {
+      setResetToken(resetTokenParam);
+      setIsResetPasswordOpen(true);
+      verifyResetToken(resetTokenParam);
     }
   }, []);
   
@@ -258,6 +277,111 @@ const Auth = () => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!forgotPasswordEmail) {
+      toast.error("Please enter your email address");
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: forgotPasswordEmail })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(data.message || "Password reset email sent! Please check your inbox.");
+        setIsForgotPasswordOpen(false);
+        setForgotPasswordEmail("");
+      } else {
+        toast.error(data.error || "Failed to send password reset email");
+      }
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  const verifyResetToken = async (token: string) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/verify-reset-token?token=${token}`);
+      const data = await response.json();
+
+      if (!data.success) {
+        toast.error(data.error || "Invalid or expired reset token");
+        setIsResetPasswordOpen(false);
+        setResetToken("");
+      }
+    } catch (error) {
+      console.error("Verify token error:", error);
+      toast.error("Failed to verify reset token");
+      setIsResetPasswordOpen(false);
+      setResetToken("");
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordData.password || !resetPasswordData.confirmPassword) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    if (resetPasswordData.password.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
+
+    if (resetPasswordData.password !== resetPasswordData.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          token: resetToken,
+          newPassword: resetPasswordData.password
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(data.message || "Password reset successfully! You can now login.");
+        setIsResetPasswordOpen(false);
+        setResetToken("");
+        setResetPasswordData({ password: "", confirmPassword: "" });
+        // Clear URL params
+        window.history.replaceState({}, document.title, "/auth");
+        // Switch to login tab
+        setTimeout(() => {
+          const loginTab = document.querySelector('[value="login"]') as HTMLElement;
+          if (loginTab) loginTab.click();
+        }, 500);
+      } else {
+        toast.error(data.error || "Failed to reset password");
+      }
+    } catch (error) {
+      console.error("Reset password error:", error);
+      toast.error("Failed to connect to server");
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const handleResendVerification = async () => {
     setIsResendingEmail(true);
     const emailToResend = unverifiedEmail || registeredEmail;
@@ -379,7 +503,19 @@ const Auth = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="login-password">Password</Label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotPasswordEmail(loginData.email);
+                          setIsForgotPasswordOpen(true);
+                        }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
                     <Input
                       id="login-password"
                       type="password"
@@ -450,6 +586,92 @@ const Auth = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Forgot Password
+            </DialogTitle>
+            <DialogDescription>
+              Enter your email address and we'll send you a link to reset your password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">Email</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="you@example.com"
+                value={forgotPasswordEmail}
+                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                disabled={isSendingReset}
+              />
+            </div>
+            <Button
+              onClick={handleForgotPassword}
+              className="w-full"
+              disabled={isSendingReset || !forgotPasswordEmail}
+            >
+              {isSendingReset ? "Sending..." : "Send Reset Link"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={isResetPasswordOpen} onOpenChange={setIsResetPasswordOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Reset Password
+            </DialogTitle>
+            <DialogDescription>
+              Enter your new password below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reset-password">New Password</Label>
+              <Input
+                id="reset-password"
+                type="password"
+                placeholder="••••••••"
+                value={resetPasswordData.password}
+                onChange={(e) => setResetPasswordData({...resetPasswordData, password: e.target.value})}
+                disabled={isResettingPassword}
+                minLength={6}
+              />
+              <p className="text-xs text-muted-foreground">
+                Password must be at least 6 characters long
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reset-confirm-password">Confirm Password</Label>
+              <Input
+                id="reset-confirm-password"
+                type="password"
+                placeholder="••••••••"
+                value={resetPasswordData.confirmPassword}
+                onChange={(e) => setResetPasswordData({...resetPasswordData, confirmPassword: e.target.value})}
+                disabled={isResettingPassword}
+                minLength={6}
+              />
+            </div>
+            <Button
+              onClick={handleResetPassword}
+              className="w-full"
+              disabled={isResettingPassword}
+            >
+              {isResettingPassword ? "Resetting..." : "Reset Password"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
