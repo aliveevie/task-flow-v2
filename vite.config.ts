@@ -15,4 +15,11 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+    // Ensure .htaccess is copied to dist
+    copyPublicDir: true,
+  },
+  publicDir: "public",
 }));
