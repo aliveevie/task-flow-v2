@@ -157,12 +157,11 @@ async function pullChanges() {
     log('✓ Dependencies installed!', 'green');
   }
   
+  log('🔄 Restarting server with new changes...', 'yellow');
   return true;
 }
 
 async function restartPM2() {
-  logSection('RESTARTING PM2 SERVER');
-  
   log(`Checking if ${PM2_PROCESS_NAME} is running...`, 'blue');
   const statusResult = await runCommand(`pm2 list | grep ${PM2_PROCESS_NAME}`);
   
@@ -171,14 +170,14 @@ async function restartPM2() {
     const restartResult = await runCommand(`pm2 restart ${PM2_PROCESS_NAME}`);
     
     if (restartResult.success) {
-      log(`✓ Successfully restarted ${PM2_PROCESS_NAME}!`, 'green');
+      log(`✓ Server restarted with new changes!`, 'green');
       log(`Restart output: ${restartResult.output}`, 'cyan');
     } else {
       log(`Restart failed: ${restartResult.error}`, 'red');
       log('Attempting to start the server...', 'yellow');
       const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAME}`);
       if (startResult.success) {
-        log(`✓ Server started!`, 'green');
+        log(`✓ Server started with new changes!`, 'green');
       } else {
         log(`Start failed: ${startResult.error}`, 'red');
       }
@@ -187,7 +186,7 @@ async function restartPM2() {
     log(`Process ${PM2_PROCESS_NAME} not found. Starting server...`, 'yellow');
     const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAME}`);
     if (startResult.success) {
-      log(`✓ Server started!`, 'green');
+      log(`✓ Server started with new changes!`, 'green');
     } else {
       log(`Start failed: ${startResult.error}`, 'red');
     }
@@ -230,15 +229,18 @@ async function monitor() {
       const changesDetected = await hasChanges();
       
       if (changesDetected) {
-        log('🔄 Changes detected! Processing update...', 'yellow');
+        logSection('🔄 CHANGES DETECTED - PROCESSING UPDATE');
+        log('🔄 Changes detected! Pulling latest changes...', 'yellow');
         
         const pullSuccess = await pullChanges();
         
         if (pullSuccess) {
+          logSection('RESTARTING SERVER');
           await restartPM2();
-          log('✓ Update complete!', 'green');
+          logSection('✓ UPDATE COMPLETE');
+          log('✓ Server successfully updated and restarted with new changes!', 'green');
         } else {
-          log('✗ Update failed!', 'red');
+          log('✗ Update failed! Could not pull changes.', 'red');
         }
       } else {
         log('✓ Repository is up to date', 'green');
