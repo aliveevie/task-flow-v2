@@ -8,6 +8,24 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: [
+      "taskflow.galaxyitt.com.ng",
+      "api.galaxyitt.com.ng",
+      "localhost",
+      "127.0.0.1",
+      "10.1.1.205",
+    ],
+  },
+  preview: {
+    host: "::",
+    port: 8080,
+    allowedHosts: [
+      "taskflow.galaxyitt.com.ng",
+      "api.galaxyitt.com.ng",
+      "localhost",
+      "127.0.0.1",
+      "10.1.1.205",
+    ],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
