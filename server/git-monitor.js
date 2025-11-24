@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
@@ -11,7 +12,12 @@ const __dirname = dirname(__filename);
 const GIT_REPO_URL = 'https://github.com/aliveevie/task-flow-v2.git';
 const BRANCH = 'main';
 const POLL_INTERVAL = 30000; // 30 seconds
-const PM2_PROCESS_NAME = 'task-flow-server';
+const PM2_PROCESS_NAMES = {
+  server: 'task-flow-server',
+  frontend: 'task-flow-frontend',
+  frontendDev: 'task-flow-frontend-dev',
+  monitor: 'git-monitor'
+};
 const ROOT_DIR = join(__dirname, '..'); // Go up one level from server/ to project root
 
 // Colors for console output
@@ -150,51 +156,132 @@ async function pullChanges() {
   if (hasPackageChanges) {
     log('⚠️  package.json changed, installing dependencies...', 'yellow');
     log('Installing root dependencies...', 'blue');
-    await runCommand('npm install', ROOT_DIR);
+    const rootInstall = await runCommand('npm install', ROOT_DIR);
+    if (rootInstall.success) {
+      log('✓ Root dependencies installed!', 'green');
+    } else {
+      log(`✗ Root dependencies install failed: ${rootInstall.error}`, 'red');
+    }
     
     log('Installing server dependencies...', 'blue');
-    await runCommand('npm install', __dirname);
-    log('✓ Dependencies installed!', 'green');
+    const serverInstall = await runCommand('npm install', __dirname);
+    if (serverInstall.success) {
+      log('✓ Server dependencies installed!', 'green');
+    } else {
+      log(`✗ Server dependencies install failed: ${serverInstall.error}`, 'red');
+    }
   }
   
-  log('🔄 Restarting server with new changes...', 'yellow');
+  // Check for frontend changes (src, public, vite.config, etc.)
+  log('Checking for frontend changes...', 'blue');
+  const { success: hasFrontendChanges } = await runCommand('git diff HEAD@{1} HEAD --name-only | grep -E "(^src/|^public/|vite.config|package.json|tsconfig)"');
+  
+  if (hasFrontendChanges) {
+    log('⚠️  Frontend files changed, building frontend...', 'yellow');
+    logSection('BUILDING FRONTEND');
+    
+    const buildResult = await runCommand('npm run build', ROOT_DIR);
+    if (buildResult.success) {
+      log('✓ Frontend build successful!', 'green');
+      log(`Build output: ${buildResult.output}`, 'cyan');
+    } else {
+      log(`✗ Frontend build failed: ${buildResult.error}`, 'red');
+      log('Continuing with restart...', 'yellow');
+    }
+  }
+  
+  log('🔄 Ready to restart services with new changes...', 'yellow');
   return true;
 }
 
+async function getFrontendProcessName() {
+  const distPath = join(ROOT_DIR, 'dist');
+  const distExists = existsSync(distPath);
+  return distExists ? PM2_PROCESS_NAMES.frontend : PM2_PROCESS_NAMES.frontendDev;
+}
+
 async function restartPM2() {
-  log(`Checking if ${PM2_PROCESS_NAME} is running...`, 'blue');
-  const statusResult = await runCommand(`pm2 list | grep ${PM2_PROCESS_NAME}`);
+  logSection('RESTARTING PM2 PROCESSES');
   
-  if (statusResult.success) {
-    log(`Restarting ${PM2_PROCESS_NAME}...`, 'blue');
-    const restartResult = await runCommand(`pm2 restart ${PM2_PROCESS_NAME}`);
+  // Check which frontend process to use
+  const frontendProcessName = await getFrontendProcessName();
+  log(`Frontend process: ${frontendProcessName}`, 'cyan');
+  log(`Server process: ${PM2_PROCESS_NAMES.server}`, 'cyan');
+  
+  // Restart server
+  log(`Checking if ${PM2_PROCESS_NAMES.server} is running...`, 'blue');
+  const serverStatus = await runCommand(`pm2 list | grep ${PM2_PROCESS_NAMES.server}`);
+  
+  if (serverStatus.success) {
+    log(`Restarting ${PM2_PROCESS_NAMES.server}...`, 'blue');
+    const serverRestart = await runCommand(`pm2 restart ${PM2_PROCESS_NAMES.server}`);
     
-    if (restartResult.success) {
-      log(`✓ Server restarted with new changes!`, 'green');
-      log(`Restart output: ${restartResult.output}`, 'cyan');
+    if (serverRestart.success) {
+      log(`✓ ${PM2_PROCESS_NAMES.server} restarted successfully!`, 'green');
+      log(`Restart output: ${serverRestart.output}`, 'cyan');
     } else {
-      log(`Restart failed: ${restartResult.error}`, 'red');
+      log(`✗ ${PM2_PROCESS_NAMES.server} restart failed: ${serverRestart.error}`, 'red');
       log('Attempting to start the server...', 'yellow');
-      const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAME}`);
+      const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAMES.server}`);
       if (startResult.success) {
-        log(`✓ Server started with new changes!`, 'green');
+        log(`✓ ${PM2_PROCESS_NAMES.server} started!`, 'green');
       } else {
-        log(`Start failed: ${startResult.error}`, 'red');
+        log(`✗ ${PM2_PROCESS_NAMES.server} start failed: ${startResult.error}`, 'red');
       }
     }
   } else {
-    log(`Process ${PM2_PROCESS_NAME} not found. Starting server...`, 'yellow');
-    const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAME}`);
+    log(`Process ${PM2_PROCESS_NAMES.server} not found. Starting server...`, 'yellow');
+    const startResult = await runCommand(`cd ${__dirname} && pm2 start index.js --name ${PM2_PROCESS_NAMES.server}`);
     if (startResult.success) {
-      log(`✓ Server started with new changes!`, 'green');
+      log(`✓ ${PM2_PROCESS_NAMES.server} started!`, 'green');
     } else {
-      log(`Start failed: ${startResult.error}`, 'red');
+      log(`✗ ${PM2_PROCESS_NAMES.server} start failed: ${startResult.error}`, 'red');
+    }
+  }
+  
+  // Restart frontend
+  log(`Checking if ${frontendProcessName} is running...`, 'blue');
+  const frontendStatus = await runCommand(`pm2 list | grep ${frontendProcessName}`);
+  
+  if (frontendStatus.success) {
+    log(`Restarting ${frontendProcessName}...`, 'blue');
+    const frontendRestart = await runCommand(`pm2 restart ${frontendProcessName}`);
+    
+    if (frontendRestart.success) {
+      log(`✓ ${frontendProcessName} restarted successfully!`, 'green');
+      log(`Restart output: ${frontendRestart.output}`, 'cyan');
+    } else {
+      log(`✗ ${frontendProcessName} restart failed: ${frontendRestart.error}`, 'red');
+      log('Attempting to start the frontend...', 'yellow');
+      // Use ecosystem config to start frontend
+      const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.js --only ${frontendProcessName}`);
+      if (startResult.success) {
+        log(`✓ ${frontendProcessName} started!`, 'green');
+      } else {
+        log(`✗ ${frontendProcessName} start failed: ${startResult.error}`, 'red');
+      }
+    }
+  } else {
+    log(`Process ${frontendProcessName} not found. Starting frontend...`, 'yellow');
+    const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.js --only ${frontendProcessName}`);
+    if (startResult.success) {
+      log(`✓ ${frontendProcessName} started!`, 'green');
+    } else {
+      log(`✗ ${frontendProcessName} start failed: ${startResult.error}`, 'red');
+      log('Note: Frontend may need to be built first. Run: npm run build', 'yellow');
     }
   }
   
   // Show PM2 status
-  log('Current PM2 status:', 'blue');
+  logSection('PM2 STATUS');
+  log('Current PM2 process status:', 'blue');
   await runCommand('pm2 status');
+  
+  // Show logs info
+  log('\n📋 To view logs:', 'cyan');
+  log(`  pm2 logs ${PM2_PROCESS_NAMES.server}`, 'cyan');
+  log(`  pm2 logs ${frontendProcessName}`, 'cyan');
+  log(`  pm2 logs`, 'cyan');
 }
 
 async function monitor() {
@@ -202,7 +289,7 @@ async function monitor() {
   log(`Repository: ${GIT_REPO_URL}`, 'cyan');
   log(`Branch: ${BRANCH}`, 'cyan');
   log(`Poll interval: ${POLL_INTERVAL / 1000} seconds`, 'cyan');
-  log(`PM2 process: ${PM2_PROCESS_NAME}`, 'cyan');
+  log(`PM2 processes: ${PM2_PROCESS_NAMES.server}, ${PM2_PROCESS_NAMES.frontend}/${PM2_PROCESS_NAMES.frontendDev}`, 'cyan');
   log(`Root directory: ${ROOT_DIR}`, 'cyan');
   
   // Check if git repo exists
@@ -235,10 +322,11 @@ async function monitor() {
         const pullSuccess = await pullChanges();
         
         if (pullSuccess) {
-          logSection('RESTARTING SERVER');
+          logSection('RESTARTING SERVICES');
           await restartPM2();
           logSection('✓ UPDATE COMPLETE');
-          log('✓ Server successfully updated and restarted with new changes!', 'green');
+          log('✓ All services successfully updated and restarted with new changes!', 'green');
+          log('✓ Frontend and backend are now running with latest code!', 'green');
         } else {
           log('✗ Update failed! Could not pull changes.', 'red');
         }
