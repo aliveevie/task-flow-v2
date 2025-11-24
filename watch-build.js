@@ -41,7 +41,7 @@ async function build() {
     // Restart PM2 frontend process
     log('🔄 Restarting frontend...', 'blue');
     try {
-      await execAsync('pm2 restart task-flow-frontend || pm2 start ecosystem.config.js --only task-flow-frontend', { cwd: __dirname });
+      await execAsync('pm2 restart task-flow-frontend || pm2 start ecosystem.config.cjs --only task-flow-frontend', { cwd: __dirname });
       log('✓ Frontend restarted!', 'green');
     } catch (error) {
       log(`⚠️  PM2 restart failed: ${error.message}`, 'yellow');

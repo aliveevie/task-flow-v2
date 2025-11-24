@@ -249,7 +249,7 @@ async function restartPM2() {
       log(`✗ ${frontendProcessName} restart failed: ${frontendRestart.error}`, 'red');
       log('Attempting to start the frontend...', 'yellow');
       // Use ecosystem config to start frontend
-      const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.js --only ${frontendProcessName}`);
+      const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${frontendProcessName}`);
       if (startResult.success) {
         log(`✓ ${frontendProcessName} started!`, 'green');
       } else {
@@ -258,7 +258,7 @@ async function restartPM2() {
     }
   } else {
     log(`Process ${frontendProcessName} not found. Starting frontend...`, 'yellow');
-    const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.js --only ${frontendProcessName}`);
+    const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${frontendProcessName}`);
     if (startResult.success) {
       log(`✓ ${frontendProcessName} started!`, 'green');
     } else {

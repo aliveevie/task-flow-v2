@@ -9,8 +9,8 @@ module.exports = {
     // Frontend - Production (if dist exists)
     ...(distExists ? [{
       name: 'task-flow-frontend',
-      script: 'vite',
-      args: 'preview --host 0.0.0.0 --port 8080',
+      script: 'npx',
+      args: 'vite preview --host 0.0.0.0 --port 8080',
       cwd: './',
       instances: 1,
       autorestart: true,
@@ -34,8 +34,8 @@ module.exports = {
     // Frontend - Development (if dist doesn't exist)
     ...(!distExists ? [{
       name: 'task-flow-frontend-dev',
-      script: 'vite',
-      args: '--host 0.0.0.0',
+      script: 'npx',
+      args: 'vite --host 0.0.0.0',
       cwd: './',
       instances: 1,
       autorestart: true,

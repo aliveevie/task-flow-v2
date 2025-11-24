@@ -68,7 +68,7 @@ async function startUI() {
     }
   } else {
     log('Starting frontend with PM2...', 'blue');
-    const startResult = await runCommand('pm2 start ecosystem.config.js --only task-flow-frontend');
+    const startResult = await runCommand('pm2 start ecosystem.config.cjs --only task-flow-frontend');
     if (startResult.success) {
       log('✓ Frontend started!', 'green');
     } else {
