@@ -172,22 +172,17 @@ async function pullChanges() {
     }
   }
   
-  // Check for frontend changes (src, public, vite.config, etc.)
-  log('Checking for frontend changes...', 'blue');
-  const { success: hasFrontendChanges } = await runCommand('git diff HEAD@{1} HEAD --name-only | grep -E "(^src/|^public/|vite.config|package.json|tsconfig)"');
+  // Always rebuild frontend when git changes are detected
+  log('⚠️  Git changes detected, rebuilding frontend...', 'yellow');
+  logSection('BUILDING FRONTEND');
   
-  if (hasFrontendChanges) {
-    log('⚠️  Frontend files changed, building frontend...', 'yellow');
-    logSection('BUILDING FRONTEND');
-    
-    const buildResult = await runCommand('npm run build', ROOT_DIR);
-    if (buildResult.success) {
-      log('✓ Frontend build successful!', 'green');
-      log(`Build output: ${buildResult.output}`, 'cyan');
-    } else {
-      log(`✗ Frontend build failed: ${buildResult.error}`, 'red');
-      log('Continuing with restart...', 'yellow');
-    }
+  const buildResult = await runCommand('npm run build', ROOT_DIR);
+  if (buildResult.success) {
+    log('✓ Frontend build successful!', 'green');
+    log(`Build output: ${buildResult.output}`, 'cyan');
+  } else {
+    log(`✗ Frontend build failed: ${buildResult.error}`, 'red');
+    log('Continuing with restart...', 'yellow');
   }
   
   log('🔄 Ready to restart services with new changes...', 'yellow');
