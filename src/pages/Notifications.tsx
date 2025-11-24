@@ -10,7 +10,7 @@ interface NotificationProps {
   role?: "admin" | "user";
 }
 
-const API_URL = "http://api.galaxyitt.com.ng:3000/api";
+const API_URL = "https://api.galaxyitt.com.ng/api";
 
 const Notifications = ({ role: propRole }: NotificationProps) => {
   const [notifications, setNotifications] = useState<any[]>([]);

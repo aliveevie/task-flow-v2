@@ -39,7 +39,7 @@ const InvitationStatusModal = ({ isOpen, onClose, projectId, onRefresh }: Invita
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/projects/${projectId}/invitations`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/projects/${projectId}/invitations`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -64,7 +64,7 @@ const InvitationStatusModal = ({ isOpen, onClose, projectId, onRefresh }: Invita
     try {
       setResending(invitationId);
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/invitations/${invitationId}/resend`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/invitations/${invitationId}/resend`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

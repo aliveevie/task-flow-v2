@@ -52,7 +52,7 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/submissions/${submission.id}/review`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/submissions/${submission.id}/review`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

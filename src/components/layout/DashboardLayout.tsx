@@ -19,7 +19,7 @@ interface UserData {
   role: string;
 }
 
-const API_URL = "http://api.galaxyitt.com.ng:3000/api";
+const API_URL = "https://api.galaxyitt.com.ng/api";
 
 const DashboardLayout = ({ children, role }: DashboardLayoutProps) => {
   const [notificationCount, setNotificationCount] = useState(0);

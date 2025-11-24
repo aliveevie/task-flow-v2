@@ -12,7 +12,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import InviteUsersModal from "@/components/projects/InviteUsersModal";
 import { toast } from "sonner";
 
-const API_URL = "http://api.galaxyitt.com.ng:3000/api";
+const API_URL = "https://api.galaxyitt.com.ng/api";
 
 const AdminUsers = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);

@@ -45,7 +45,7 @@ const TaskSubmissionsView = ({ isOpen, onClose, taskId, taskTitle, onReviewSucce
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/tasks/${taskId}/submissions`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/tasks/${taskId}/submissions`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

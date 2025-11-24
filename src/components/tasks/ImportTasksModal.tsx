@@ -258,7 +258,7 @@ const ImportTasksModal = ({ open, onOpenChange, projectId, onSuccess }: ImportTa
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/projects/${projectId}/tasks/import`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/projects/${projectId}/tasks/import`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

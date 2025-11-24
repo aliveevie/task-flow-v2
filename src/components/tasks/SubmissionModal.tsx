@@ -70,7 +70,7 @@ const SubmissionModal = ({ isOpen, onClose, taskId, taskTitle, onSuccess }: Subm
       });
 
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/tasks/${taskId}/submit`, {
+      const response = await fetch(`https://api.galaxyitt.com.ng/api/tasks/${taskId}/submit`, {
         method: "POST",
         headers: {
           'Authorization': `Bearer ${token}`

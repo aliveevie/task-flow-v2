@@ -580,7 +580,7 @@ app.post('/api/auth/register', async (req, res) => {
 
       // Send verification email
       if (emailReady) {
-        const verificationLink = `http://api.galaxyitt.com.ng:3000/api/auth/verify-email?token=${verificationToken}`;
+        const verificationLink = `https://api.galaxyitt.com.ng/api/auth/verify-email?token=${verificationToken}`;
         
         try {
           await emailService.sendVerificationEmail({
@@ -897,7 +897,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     );
 
     // Send verification email
-    const verificationLink = `http://api.galaxyitt.com.ng:3000/api/auth/verify-email?token=${verificationToken}`;
+    const verificationLink = `https://api.galaxyitt.com.ng/api/auth/verify-email?token=${verificationToken}`;
     
     try {
       await emailService.sendVerificationEmail({
@@ -2435,7 +2435,7 @@ async function sendInvitationForImport(projectId, inviterId, email, name, projec
   // Send invitation email
   if (emailReady) {
     try {
-      const acceptUrl = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${invitationToken}`;
+      const acceptUrl = `https://api.galaxyitt.com.ng/api/invitations/accept?token=${invitationToken}`;
       const inviterResult = await db.query('SELECT full_name FROM users WHERE id = $1', [inviterId]);
       const inviterName = inviterResult.rows[0]?.full_name || 'Admin';
       
@@ -2753,7 +2753,7 @@ app.post('/api/invitations/:invitationId/resend', authenticateToken, async (req,
 
     // Send email
     if (emailReady) {
-      const acceptUrl = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${newToken}`;
+      const acceptUrl = `https://api.galaxyitt.com.ng/api/invitations/accept?token=${newToken}`;
       await emailService.sendProjectInviteEmail({
         to: email || invitation.invitee_email,
         userName: invitation.invitee_email,
@@ -3000,8 +3000,8 @@ app.post('/api/projects/invite', async (req, res) => {
 
     // Send invitation email
     if (emailReady) {
-      const acceptLink = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${invitation_token}`;
-      const rejectLink = `http://api.galaxyitt.com.ng:3000/api/invitations/reject?token=${invitation_token}`;
+      const acceptLink = `https://api.galaxyitt.com.ng/api/invitations/accept?token=${invitation_token}`;
+      const rejectLink = `https://api.galaxyitt.com.ng/api/invitations/reject?token=${invitation_token}`;
 
       await emailService.sendProjectInvitationEmail({
         to: invitee_email,
@@ -3572,8 +3572,8 @@ app.post('/api/projects/leave-request', async (req, res) => {
 
     // Send email to admin
     if (emailReady) {
-      const approveLink = `http://api.galaxyitt.com.ng:3000/api/leave-requests/approve?id=${leaveRequestResult.rows[0].id}`;
-      const rejectLink = `http://api.galaxyitt.com.ng:3000/api/leave-requests/reject?id=${leaveRequestResult.rows[0].id}`;
+      const approveLink = `https://api.galaxyitt.com.ng/api/leave-requests/approve?id=${leaveRequestResult.rows[0].id}`;
+      const rejectLink = `https://api.galaxyitt.com.ng/api/leave-requests/reject?id=${leaveRequestResult.rows[0].id}`;
 
       await emailService.sendLeaveRequestEmail({
         to: project.email,

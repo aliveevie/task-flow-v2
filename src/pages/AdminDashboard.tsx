@@ -32,7 +32,7 @@ const AdminDashboard = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://api.galaxyitt.com.ng:3000/api/projects', {
+      const response = await fetch('https://api.galaxyitt.com.ng/api/projects', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -44,13 +44,13 @@ const AdminDashboard = () => {
         // Fetch task counts for each project
         const projectsWithData = await Promise.all(
           result.data.map(async (project: any) => {
-            const tasksResponse = await fetch(`http://api.galaxyitt.com.ng:3000/api/projects/${project.id}/tasks`, {
+            const tasksResponse = await fetch(`https://api.galaxyitt.com.ng/api/projects/${project.id}/tasks`, {
               headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
             });
             const tasksResult = await tasksResponse.json();
             const tasks = tasksResult.data || [];
 
-            const membersResponse = await fetch(`http://api.galaxyitt.com.ng:3000/api/projects/${project.id}/members`, {
+            const membersResponse = await fetch(`https://api.galaxyitt.com.ng/api/projects/${project.id}/members`, {
               headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
             });
             const membersResult = await membersResponse.json();
@@ -111,7 +111,7 @@ const AdminDashboard = () => {
 
       const user = JSON.parse(userData);
 
-      const response = await fetch('http://api.galaxyitt.com.ng:3000/api/projects', {
+      const response = await fetch('https://api.galaxyitt.com.ng/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
