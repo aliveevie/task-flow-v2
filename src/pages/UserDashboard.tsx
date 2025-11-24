@@ -9,7 +9,7 @@ import SubmissionModal from "@/components/tasks/SubmissionModal";
 import ViewSubmissionFeedback from "@/components/tasks/ViewSubmissionFeedback";
 import { toast } from "sonner";
 
-const API_URL = "http://10.1.1.205:3000/api";
+const API_URL = "http://api.galaxyitt.com.ng:3000/api";
 
 const UserDashboard = () => {
   const [userName, setUserName] = useState("User");

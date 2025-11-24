@@ -35,7 +35,7 @@ console.log('   • tasks table (with RLS policies)');
 console.log('   • project_members table (with RLS policies)');
 console.log('   • Automatic timestamp update triggers');
 console.log('   • All necessary indexes for performance\n');
-console.log('🚀 Your server is ready at: http://10.1.1.205:3000\n');
+console.log('🚀 Your server is ready at: http://api.galaxyitt.com.ng:3000\n');
 console.log('='.repeat(60) + '\n');
 
 

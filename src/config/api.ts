@@ -12,15 +12,15 @@ const getApiUrl = (): string => {
       // Use direct IP - CORS is configured on server to allow this domain
       // Note: This will cause mixed content warning, but will work
       // For production, consider setting up API on subdomain or enabling HTTPS on backend
-      return 'http://10.1.1.205:3000/api';
+      return 'http://api.galaxyitt.com.ng:3000/api';
     }
     
     // Development/local
-    return 'http://10.1.1.205:3000/api';
+    return 'http://api.galaxyitt.com.ng:3000/api';
   }
   
   // Fallback for SSR
-  return 'http://10.1.1.205:3000/api';
+  return 'http://api.galaxyitt.com.ng:3000/api';
 };
 
 export const API_URL = getApiUrl();

@@ -40,7 +40,7 @@ npm run dev
 
 ### Step 3: Test the Connection
 
-Visit: `http://10.1.1.205:3000/api/db-test`
+Visit: `http://api.galaxyitt.com.ng:3000/api/db-test`
 
 You should see:
 ```json

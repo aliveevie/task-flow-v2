@@ -8,7 +8,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import SubmissionModal from "@/components/tasks/SubmissionModal";
 import { toast } from "sonner";
 
-const API_URL = "http://10.1.1.205:3000/api";
+const API_URL = "http://api.galaxyitt.com.ng:3000/api";
 
 const ProjectAssignedTasks = () => {
   const { projectId } = useParams();

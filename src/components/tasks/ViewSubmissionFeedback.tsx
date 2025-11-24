@@ -40,7 +40,7 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://10.1.1.205:3000/api/tasks/${taskId}/submissions`, {
+      const response = await fetch(`http://api.galaxyitt.com.ng:3000/api/tasks/${taskId}/submissions`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -75,7 +75,7 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`http://10.1.1.205:3000${fileUrl}`, "_blank");
+    window.open(`http://api.galaxyitt.com.ng:3000${fileUrl}`, "_blank");
   };
 
   const latestSubmission = submissions.length > 0 ? submissions[0] : null;

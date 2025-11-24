@@ -580,7 +580,7 @@ app.post('/api/auth/register', async (req, res) => {
 
       // Send verification email
       if (emailReady) {
-        const verificationLink = `http://10.1.1.205:3000/api/auth/verify-email?token=${verificationToken}`;
+        const verificationLink = `http://api.galaxyitt.com.ng:3000/api/auth/verify-email?token=${verificationToken}`;
         
         try {
           await emailService.sendVerificationEmail({
@@ -681,7 +681,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
         <body style="font-family: Arial; text-align: center; padding: 50px;">
           <h1>❌ Invalid or Expired Link</h1>
           <p>This verification link is invalid or has already been used.</p>
-          <p><a href="http://10.1.1.205:3000/auth">Go to Login</a></p>
+          <p><a href="http://api.galaxyitt.com.ng:3000/auth">Go to Login</a></p>
         </body>
         </html>
       `);
@@ -699,7 +699,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
           <h1>⏰ Link Expired</h1>
           <p>This verification link has expired.</p>
           <p>Please request a new verification email.</p>
-          <p><a href="http://10.1.1.205:3000/auth">Go to Login</a></p>
+          <p><a href="http://api.galaxyitt.com.ng:3000/auth">Go to Login</a></p>
         </body>
         </html>
       `);
@@ -730,7 +730,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
         await emailService.sendEmailVerifiedEmail({
           to: tokenData.email,
           userName: tokenData.full_name,
-          loginUrl: 'http://10.1.1.205:3000/auth'
+          loginUrl: 'http://api.galaxyitt.com.ng:3000/auth'
         });
       } catch (emailError) {
         console.error('Failed to send welcome email:', emailError);
@@ -897,7 +897,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     );
 
     // Send verification email
-    const verificationLink = `http://10.1.1.205:3000/api/auth/verify-email?token=${verificationToken}`;
+    const verificationLink = `http://api.galaxyitt.com.ng:3000/api/auth/verify-email?token=${verificationToken}`;
     
     try {
       await emailService.sendVerificationEmail({
@@ -1011,7 +1011,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     );
 
     // Send password reset email
-    const resetLink = `http://10.1.1.205:3000/auth/reset-password?token=${resetToken}`;
+    const resetLink = `http://api.galaxyitt.com.ng:3000/auth/reset-password?token=${resetToken}`;
     
     try {
       await emailService.sendPasswordResetEmail({
@@ -1452,7 +1452,7 @@ app.post('/api/email/welcome', async (req, res) => {
       to: email,
       userName: userName || 'User',
       userEmail: userEmail || email,
-      loginUrl: loginUrl || 'http://10.1.1.205:3000'
+      loginUrl: loginUrl || 'http://api.galaxyitt.com.ng:3000'
     });
 
     res.json({
@@ -2435,7 +2435,7 @@ async function sendInvitationForImport(projectId, inviterId, email, name, projec
   // Send invitation email
   if (emailReady) {
     try {
-      const acceptUrl = `http://10.1.1.205:3000/api/invitations/accept?token=${invitationToken}`;
+      const acceptUrl = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${invitationToken}`;
       const inviterResult = await db.query('SELECT full_name FROM users WHERE id = $1', [inviterId]);
       const inviterName = inviterResult.rows[0]?.full_name || 'Admin';
       
@@ -2753,7 +2753,7 @@ app.post('/api/invitations/:invitationId/resend', authenticateToken, async (req,
 
     // Send email
     if (emailReady) {
-      const acceptUrl = `http://10.1.1.205:3000/api/invitations/accept?token=${newToken}`;
+      const acceptUrl = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${newToken}`;
       await emailService.sendProjectInviteEmail({
         to: email || invitation.invitee_email,
         userName: invitation.invitee_email,
@@ -3000,8 +3000,8 @@ app.post('/api/projects/invite', async (req, res) => {
 
     // Send invitation email
     if (emailReady) {
-      const acceptLink = `http://10.1.1.205:3000/api/invitations/accept?token=${invitation_token}`;
-      const rejectLink = `http://10.1.1.205:3000/api/invitations/reject?token=${invitation_token}`;
+      const acceptLink = `http://api.galaxyitt.com.ng:3000/api/invitations/accept?token=${invitation_token}`;
+      const rejectLink = `http://api.galaxyitt.com.ng:3000/api/invitations/reject?token=${invitation_token}`;
 
       await emailService.sendProjectInvitationEmail({
         to: invitee_email,
@@ -3291,7 +3291,7 @@ app.get('/api/invitations/accept', async (req, res) => {
         userName: user.full_name,
         userEmail: user.email,
         projectName: invitation.project_title,
-        projectUrl: `http://10.1.1.205:3000/admin/projects/${invitation.project_id}`
+        projectUrl: `http://api.galaxyitt.com.ng:3000/admin/projects/${invitation.project_id}`
       });
 
       // Welcome user to project
@@ -3300,7 +3300,7 @@ app.get('/api/invitations/accept', async (req, res) => {
         userName: user.full_name,
         projectName: invitation.project_title,
         inviterName: invitation.inviter_name,
-        dashboardUrl: 'http://10.1.1.205:3000/user'
+        dashboardUrl: 'http://api.galaxyitt.com.ng:3000/user'
       });
     }
 
@@ -3459,7 +3459,7 @@ app.get('/api/invitations/reject', async (req, res) => {
         adminName: invitation.inviter_name,
         userEmail: invitation.invitee_email,
         projectName: invitation.project_title,
-        projectUrl: `http://10.1.1.205:3000/admin/projects/${invitation.project_id}`
+        projectUrl: `http://api.galaxyitt.com.ng:3000/admin/projects/${invitation.project_id}`
       });
     }
 
@@ -3572,8 +3572,8 @@ app.post('/api/projects/leave-request', async (req, res) => {
 
     // Send email to admin
     if (emailReady) {
-      const approveLink = `http://10.1.1.205:3000/api/leave-requests/approve?id=${leaveRequestResult.rows[0].id}`;
-      const rejectLink = `http://10.1.1.205:3000/api/leave-requests/reject?id=${leaveRequestResult.rows[0].id}`;
+      const approveLink = `http://api.galaxyitt.com.ng:3000/api/leave-requests/approve?id=${leaveRequestResult.rows[0].id}`;
+      const rejectLink = `http://api.galaxyitt.com.ng:3000/api/leave-requests/reject?id=${leaveRequestResult.rows[0].id}`;
 
       await emailService.sendLeaveRequestEmail({
         to: project.email,
