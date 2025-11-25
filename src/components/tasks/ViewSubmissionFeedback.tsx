@@ -30,7 +30,7 @@ interface ViewSubmissionFeedbackProps {
 const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh }: ViewSubmissionFeedbackProps) => {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewingFile, setViewingFile] = useState<{ url: string; name: string; type: string } | null>(null);
+  const [viewingFile, setViewingFile] = useState<{ url: string; name: string; type: string; originalUrl: string } | null>(null);
 
   useEffect(() => {
     if (isOpen && taskId) {
@@ -109,9 +109,25 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
       const fullUrl = `${baseUrl}${normalizedUrl}`;
       const fileType = getFileType(fileName);
       
-      setViewingFile({ url: fullUrl, name: fileName, type: fileType });
+      // Fetch file with authentication to create blob URL
+      const token = localStorage.getItem("token");
+      const response = await fetch(fullUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load file');
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      setViewingFile({ url: blobUrl, name: fileName, type: fileType, originalUrl: normalizedUrl });
     } catch (error) {
       toast.error("Failed to load file");
+      console.error("Error loading file:", error);
     }
   };
 
@@ -306,7 +322,13 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
 
       {/* File Viewer Modal */}
       {viewingFile && (
-        <Dialog open={!!viewingFile} onOpenChange={() => setViewingFile(null)}>
+        <Dialog open={!!viewingFile} onOpenChange={() => {
+          // Clean up blob URL when closing
+          if (viewingFile.url.startsWith('blob:')) {
+            window.URL.revokeObjectURL(viewingFile.url);
+          }
+          setViewingFile(null);
+        }}>
           <DialogContent className="max-w-4xl max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="flex items-center justify-between">
@@ -314,7 +336,12 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setViewingFile(null)}
+                  onClick={() => {
+                    if (viewingFile.url.startsWith('blob:')) {
+                      window.URL.revokeObjectURL(viewingFile.url);
+                    }
+                    setViewingFile(null);
+                  }}
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -322,13 +349,16 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
             </DialogHeader>
             <div className="mt-4">
               {viewingFile.type === 'image' ? (
-                <div className="flex items-center justify-center bg-muted rounded-lg p-4">
+                <div className="flex items-center justify-center bg-muted rounded-lg p-4 min-h-[400px]">
                   <img
                     src={viewingFile.url}
                     alt={viewingFile.name}
                     className="max-w-full max-h-[70vh] object-contain rounded"
                     onError={() => {
                       toast.error("Failed to load image");
+                      if (viewingFile.url.startsWith('blob:')) {
+                        window.URL.revokeObjectURL(viewingFile.url);
+                      }
                       setViewingFile(null);
                     }}
                   />
@@ -345,7 +375,9 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
                 <div className="text-center py-8">
                   <File className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground mb-4">Preview not available for this file type</p>
-                  <Button onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}>
+                  <Button onClick={async () => {
+                    await downloadFile(viewingFile.originalUrl, viewingFile.name);
+                  }}>
                     <Download className="w-4 h-4 mr-2" />
                     Download to View
                   </Button>
@@ -354,12 +386,19 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
               <div className="flex justify-end gap-2 mt-4">
                 <Button
                   variant="outline"
-                  onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}
+                  onClick={async () => {
+                    await downloadFile(viewingFile.originalUrl, viewingFile.name);
+                  }}
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Download
                 </Button>
-                <Button variant="outline" onClick={() => setViewingFile(null)}>
+                <Button variant="outline" onClick={() => {
+                  if (viewingFile.url.startsWith('blob:')) {
+                    window.URL.revokeObjectURL(viewingFile.url);
+                  }
+                  setViewingFile(null);
+                }}>
                   Close
                 </Button>
               </div>
