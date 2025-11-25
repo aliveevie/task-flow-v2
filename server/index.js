@@ -2939,6 +2939,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
         u.role,
         u.is_active,
         u.is_email_verified,
+        u.created_at,
         COUNT(DISTINCT t.id) as tasks_count,
         COUNT(DISTINCT CASE WHEN pi.status = 'pending' THEN pi.id END) as pending_invites_count
       FROM users u
@@ -2948,7 +2949,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
       LEFT JOIN tasks t ON t.assigned_to = u.full_name AND t.project_id = p.id
       LEFT JOIN project_invitations pi ON pi.invitee_email = u.email AND pi.status = 'pending' AND pi.project_id = p.id
       WHERE p.created_by = $1 OR admin_pm.id IS NOT NULL
-      GROUP BY u.id, u.full_name, u.email, u.role, u.is_active, u.is_email_verified
+      GROUP BY u.id, u.full_name, u.email, u.role, u.is_active, u.is_email_verified, u.created_at
       ORDER BY u.created_at DESC
     `, [userId]);
 

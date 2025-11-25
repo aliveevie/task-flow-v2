@@ -167,16 +167,18 @@ async function pullChanges() {
   
   if (hasPackageChanges) {
     log('⚠️  package.json changed, installing dependencies...', 'yellow');
-    log('Installing root dependencies...', 'blue');
-    const rootInstall = await runCommand('npm install', ROOT_DIR);
+    log(`Installing root dependencies in: ${ROOT_DIR}`, 'blue');
+    const rootInstallCommand = `cd ${ROOT_DIR} && npm install`;
+    const rootInstall = await runCommand(rootInstallCommand, ROOT_DIR);
     if (rootInstall.success) {
       log('✓ Root dependencies installed!', 'green');
     } else {
       log(`✗ Root dependencies install failed: ${rootInstall.error}`, 'red');
     }
     
-    log('Installing server dependencies...', 'blue');
-    const serverInstall = await runCommand('npm install', __dirname);
+    log(`Installing server dependencies in: ${__dirname}`, 'blue');
+    const serverInstallCommand = `cd ${__dirname} && npm install`;
+    const serverInstall = await runCommand(serverInstallCommand, __dirname);
     if (serverInstall.success) {
       log('✓ Server dependencies installed!', 'green');
     } else {
@@ -188,8 +190,13 @@ async function pullChanges() {
   log('⚠️  Git changes detected, rebuilding frontend...', 'yellow');
   logSection('BUILDING FRONTEND');
   
-  log('Running npm run build...', 'blue');
-  const buildResult = await runCommand('npm run build', ROOT_DIR);
+  log(`Changing to project root directory: ${ROOT_DIR}`, 'blue');
+  log('Running npm run build in project root...', 'blue');
+  
+  // Explicitly run build from root directory
+  const buildCommand = `cd ${ROOT_DIR} && npm run build`;
+  const buildResult = await runCommand(buildCommand, ROOT_DIR);
+  
   if (buildResult.success) {
     log('✓ Frontend build successful!', 'green');
     
@@ -197,9 +204,16 @@ async function pullChanges() {
     const distPath = join(ROOT_DIR, 'dist');
     const distExists = existsSync(distPath);
     if (distExists) {
-      log('✓ dist folder verified!', 'green');
+      log(`✓ dist folder verified at: ${distPath}`, 'green');
+      
+      // List dist contents to confirm build
+      const { success: listSuccess, output: listOutput } = await runCommand(`ls -la ${distPath} | head -10`);
+      if (listSuccess) {
+        log('Dist folder contents:', 'cyan');
+        log(listOutput, 'cyan');
+      }
     } else {
-      log('⚠️  Build succeeded but dist folder not found!', 'yellow');
+      log(`⚠️  Build succeeded but dist folder not found at: ${distPath}`, 'yellow');
     }
     
     if (buildResult.output) {
@@ -220,6 +234,7 @@ async function pullChanges() {
     // Don't return false - still restart to pick up any server changes
   }
   
+  log(`Returning to server directory: ${__dirname}`, 'blue');
   log('🔄 Ready to restart services with new changes...', 'yellow');
   return true;
 }

@@ -26,8 +26,8 @@ const InviteUsersModal = ({ open, onOpenChange, onSubmit }: InviteUsersModalProp
       .map(email => email.trim())
       .filter(email => email.length > 0);
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const validEmails = emailList.filter(email => emailRegex.test(email));
     
     // Add only new emails that aren't already in the list
@@ -35,7 +35,7 @@ const InviteUsersModal = ({ open, onOpenChange, onSubmit }: InviteUsersModalProp
     
     if (newEmails.length > 0) {
       setEmails([...emails, ...newEmails]);
-      setEmailInput("");
+        setEmailInput("");
     }
   };
 

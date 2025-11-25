@@ -75,7 +75,7 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`http://api.galaxyitt.com.ng:3000${fileUrl}`, "_blank");
+    window.open(`https://taskflow.galaxyitt.com.ng${fileUrl}`, "_blank");
   };
 
   const latestSubmission = submissions.length > 0 ? submissions[0] : null;

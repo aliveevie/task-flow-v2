@@ -95,7 +95,7 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`http://api.galaxyitt.com.ng:3000${fileUrl}`, "_blank");
+    window.open(`https://taskflow.galaxyitt.com.ng${fileUrl}`, "_blank");
   };
 
   if (!submission) return null;
