@@ -192,11 +192,30 @@ async function pullChanges() {
   const buildResult = await runCommand('npm run build', ROOT_DIR);
   if (buildResult.success) {
     log('✓ Frontend build successful!', 'green');
+    
+    // Verify dist folder was created
+    const distPath = join(ROOT_DIR, 'dist');
+    const distExists = existsSync(distPath);
+    if (distExists) {
+      log('✓ dist folder verified!', 'green');
+    } else {
+      log('⚠️  Build succeeded but dist folder not found!', 'yellow');
+    }
+    
     if (buildResult.output) {
-      log(`Build output: ${buildResult.output.substring(0, 500)}...`, 'cyan');
+      // Show last 500 chars of build output (usually contains success message)
+      const outputLength = buildResult.output.length;
+      const outputPreview = outputLength > 500 
+        ? buildResult.output.substring(outputLength - 500) 
+        : buildResult.output;
+      log(`Build output: ${outputPreview}`, 'cyan');
     }
   } else {
     log(`✗ Frontend build failed: ${buildResult.error}`, 'red');
+    log('⚠️  Build error details:', 'yellow');
+    if (buildResult.output) {
+      log(buildResult.output, 'red');
+    }
     log('⚠️  Continuing with restart (frontend may need manual rebuild)...', 'yellow');
     // Don't return false - still restart to pick up any server changes
   }
@@ -214,10 +233,18 @@ async function getFrontendProcessName() {
 async function restartPM2() {
   logSection('RESTARTING PM2 PROCESSES');
   
-  // Check which frontend process to use
+  // Check which frontend process to use - recheck dist after build
   const frontendProcessName = await getFrontendProcessName();
   log(`Frontend process: ${frontendProcessName}`, 'cyan');
   log(`Server process: ${PM2_PROCESS_NAMES.server}`, 'cyan');
+  
+  // If dist exists, always use production frontend
+  const distPath = join(ROOT_DIR, 'dist');
+  const distExists = existsSync(distPath);
+  const finalFrontendProcess = distExists ? PM2_PROCESS_NAMES.frontend : frontendProcessName;
+  if (finalFrontendProcess !== frontendProcessName) {
+    log(`✓ dist folder found, using production frontend: ${finalFrontendProcess}`, 'green');
+  }
   
   // Restart server
   log(`Checking if ${PM2_PROCESS_NAMES.server} is running...`, 'blue');
@@ -250,36 +277,49 @@ async function restartPM2() {
     }
   }
   
-  // Restart frontend
-  log(`Checking if ${frontendProcessName} is running...`, 'blue');
-  const frontendStatus = await runCommand(`pm2 list | grep ${frontendProcessName}`);
+  // Restart frontend - use finalFrontendProcess (production if dist exists)
+  log(`Checking if ${finalFrontendProcess} is running...`, 'blue');
+  const frontendStatus = await runCommand(`pm2 list | grep ${finalFrontendProcess}`);
+  
+  // Stop dev process if it's running and we need production
+  if (distExists && finalFrontendProcess === PM2_PROCESS_NAMES.frontend) {
+    const devStatus = await runCommand(`pm2 list | grep ${PM2_PROCESS_NAMES.frontendDev}`);
+    if (devStatus.success) {
+      log(`Stopping dev frontend process...`, 'yellow');
+      await runCommand(`pm2 stop ${PM2_PROCESS_NAMES.frontendDev}`);
+      await runCommand(`pm2 delete ${PM2_PROCESS_NAMES.frontendDev}`);
+    }
+  }
   
   if (frontendStatus.success) {
-    log(`Restarting ${frontendProcessName}...`, 'blue');
-    const frontendRestart = await runCommand(`pm2 restart ${frontendProcessName}`);
+    log(`Restarting ${finalFrontendProcess}...`, 'blue');
+    const frontendRestart = await runCommand(`pm2 restart ${finalFrontendProcess}`);
     
     if (frontendRestart.success) {
-      log(`✓ ${frontendProcessName} restarted successfully!`, 'green');
+      log(`✓ ${finalFrontendProcess} restarted successfully!`, 'green');
       log(`Restart output: ${frontendRestart.output}`, 'cyan');
     } else {
-      log(`✗ ${frontendProcessName} restart failed: ${frontendRestart.error}`, 'red');
+      log(`✗ ${finalFrontendProcess} restart failed: ${frontendRestart.error}`, 'red');
       log('Attempting to start the frontend...', 'yellow');
       // Use ecosystem config to start frontend
-      const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${frontendProcessName}`);
+      const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${finalFrontendProcess}`);
       if (startResult.success) {
-        log(`✓ ${frontendProcessName} started!`, 'green');
+        log(`✓ ${finalFrontendProcess} started!`, 'green');
       } else {
-        log(`✗ ${frontendProcessName} start failed: ${startResult.error}`, 'red');
+        log(`✗ ${finalFrontendProcess} start failed: ${startResult.error}`, 'red');
       }
     }
   } else {
-    log(`Process ${frontendProcessName} not found. Starting frontend...`, 'yellow');
-    const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${frontendProcessName}`);
+    log(`Process ${finalFrontendProcess} not found. Starting frontend...`, 'yellow');
+    const startResult = await runCommand(`cd ${ROOT_DIR} && pm2 start ecosystem.config.cjs --only ${finalFrontendProcess}`);
     if (startResult.success) {
-      log(`✓ ${frontendProcessName} started!`, 'green');
+      log(`✓ ${finalFrontendProcess} started!`, 'green');
     } else {
-      log(`✗ ${frontendProcessName} start failed: ${startResult.error}`, 'red');
-      log('Note: Frontend may need to be built first. Run: npm run build', 'yellow');
+      log(`✗ ${finalFrontendProcess} start failed: ${startResult.error}`, 'red');
+      if (!distExists) {
+        log('⚠️  dist folder not found. Frontend needs to be built first.', 'yellow');
+        log('   Run: npm run build', 'yellow');
+      }
     }
   }
   
