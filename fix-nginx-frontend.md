@@ -82,7 +82,7 @@ sudo tail -f /var/log/nginx/access.log
 # Test if frontend is accessible directly
 curl http://10.1.1.205:8080
 # or
-curl http://localhost:8080
+curl https://taskflow.galaxyitt.com.ng
 ```
 
 ## Common Issues

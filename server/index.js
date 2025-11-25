@@ -746,8 +746,8 @@ app.get('/api/auth/verify-email', async (req, res) => {
     );
 
     const redirectUrl = pendingInvitationsCheck.rows.length > 0 
-      ? `http://localhost:8080/auth?action=accept-invitation&token=${pendingInvitationsCheck.rows[0].invitation_token}`
-      : 'http://localhost:8080/auth';
+      ? `https://taskflow.galaxyitt.com.ng/auth?action=accept-invitation&token=${pendingInvitationsCheck.rows[0].invitation_token}`
+      : 'https://taskflow.galaxyitt.com.ng/auth';
 
     res.send(`
       <!DOCTYPE html>
@@ -1982,7 +1982,7 @@ app.post('/api/tasks', async (req, res) => {
         
         if (userResult.rows.length > 0) {
           const assignedUser = userResult.rows[0];
-          const taskUrl = `http://localhost:8080/projects/${project_id}/tasks`;
+          const taskUrl = `https://taskflow.galaxyitt.com.ng/projects/${project_id}/tasks`;
 
           await emailService.sendTaskAssignedEmail({
             to: assignedUser.email,
@@ -2067,7 +2067,7 @@ app.put('/api/tasks/:id', async (req, res) => {
         
         if (userResult.rows.length > 0) {
           const assignedUser = userResult.rows[0];
-          const taskUrl = `http://localhost:8080/projects/${projectId}/tasks`;
+          const taskUrl = `https://taskflow.galaxyitt.com.ng/projects/${projectId}/tasks`;
 
           await emailService.sendTaskAssignedEmail({
             to: assignedUser.email,
@@ -3139,7 +3139,7 @@ app.post('/api/invitations/accept', authenticateToken, async (req, res) => {
         userName: user.full_name,
         userEmail: user.email,
         projectName: invitation.project_title,
-        projectUrl: `http://localhost:8080/admin/projects/${invitation.project_id}`
+        projectUrl: `https://taskflow.galaxyitt.com.ng/admin/projects/${invitation.project_id}`
       });
 
       // Welcome user to project
@@ -3148,7 +3148,7 @@ app.post('/api/invitations/accept', authenticateToken, async (req, res) => {
         userName: user.full_name,
         projectName: invitation.project_title,
         inviterName: invitation.inviter_name,
-        dashboardUrl: `http://localhost:8080/projects/${invitation.project_id}/tasks`
+        dashboardUrl: `https://taskflow.galaxyitt.com.ng/projects/${invitation.project_id}/tasks`
       });
     }
 
@@ -3237,7 +3237,7 @@ app.get('/api/invitations/accept', async (req, res) => {
         <html>
         <head>
           <title>Create Account - TaskFlow</title>
-          <meta http-equiv="refresh" content="3;url=http://localhost:8080/auth?invitation=${token}">
+          <meta http-equiv="refresh" content="3;url=https://taskflow.galaxyitt.com.ng/auth?invitation=${token}">
         </head>
         <body style="font-family: Arial; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center;">
           <div style="background: white; padding: 50px; border-radius: 20px;">
@@ -3310,7 +3310,7 @@ app.get('/api/invitations/accept', async (req, res) => {
       <html>
       <head>
         <title>Invitation Accepted - TaskFlow</title>
-        <meta http-equiv="refresh" content="3;url=http://localhost:8080/projects/${invitation.project_id}/tasks">
+        <meta http-equiv="refresh" content="3;url=https://taskflow.galaxyitt.com.ng/projects/${invitation.project_id}/tasks">
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
@@ -3333,7 +3333,7 @@ app.get('/api/invitations/accept', async (req, res) => {
           .checkmark { font-size: 60px; color: #10b981; }
         </style>
         <script>
-          setTimeout(function() { window.location.href = 'http://localhost:8080/projects/${invitation.project_id}/tasks'; }, 3000);
+          setTimeout(function() { window.location.href = 'https://taskflow.galaxyitt.com.ng/projects/${invitation.project_id}/tasks'; }, 3000);
         </script>
       </head>
       <body>
