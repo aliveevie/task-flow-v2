@@ -98,11 +98,14 @@ async function getLocalCommit() {
 
 async function getRemoteCommit() {
   log('Fetching latest commits from remote...', 'blue');
-  const fetchResult = await runCommand('git fetch origin');
+  // Fetch all branches and prune deleted ones to ensure we have the latest
+  const fetchResult = await runCommand('git fetch origin --all --prune');
   if (!fetchResult.success) {
     log(`Failed to fetch: ${fetchResult.error}`, 'red');
     return null;
   }
+  
+  log('✓ Successfully fetched from remote', 'green');
   
   const { success, output } = await runCommand(`git rev-parse origin/${BRANCH}`);
   if (success) {
@@ -135,11 +138,20 @@ async function hasChanges() {
 async function pullChanges() {
   logSection('PULLING CHANGES FROM REMOTE');
   
+  // First, ensure we have the latest from remote
+  log('Fetching latest from remote...', 'blue');
+  const fetchResult = await runCommand('git fetch origin --all --prune');
+  if (!fetchResult.success) {
+    log(`Fetch failed: ${fetchResult.error}`, 'red');
+  } else {
+    log('✓ Successfully fetched from remote', 'green');
+  }
+  
   log('Stashing local changes (if any)...', 'blue');
   await runCommand('git stash');
   
   log(`Pulling from origin/${BRANCH}...`, 'blue');
-  const pullResult = await runCommand(`git pull origin ${BRANCH}`);
+  const pullResult = await runCommand(`git pull origin ${BRANCH} --no-edit`);
   
   if (!pullResult.success) {
     log(`Pull failed: ${pullResult.error}`, 'red');
@@ -176,13 +188,17 @@ async function pullChanges() {
   log('⚠️  Git changes detected, rebuilding frontend...', 'yellow');
   logSection('BUILDING FRONTEND');
   
+  log('Running npm run build...', 'blue');
   const buildResult = await runCommand('npm run build', ROOT_DIR);
   if (buildResult.success) {
     log('✓ Frontend build successful!', 'green');
-    log(`Build output: ${buildResult.output}`, 'cyan');
+    if (buildResult.output) {
+      log(`Build output: ${buildResult.output.substring(0, 500)}...`, 'cyan');
+    }
   } else {
     log(`✗ Frontend build failed: ${buildResult.error}`, 'red');
-    log('Continuing with restart...', 'yellow');
+    log('⚠️  Continuing with restart (frontend may need manual rebuild)...', 'yellow');
+    // Don't return false - still restart to pick up any server changes
   }
   
   log('🔄 Ready to restart services with new changes...', 'yellow');

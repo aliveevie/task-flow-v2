@@ -51,8 +51,8 @@ const Auth = () => {
       toast.success("Invitation accepted! Please login to access your projects.");
     }
 
-    // Check for password reset token
-    if (resetTokenParam && window.location.pathname.includes('/reset-password')) {
+    // Check for password reset token - handle it if token exists and we're on auth or reset-password route
+    if (resetTokenParam && (window.location.pathname === '/auth' || window.location.pathname === '/auth/reset-password' || window.location.pathname.includes('/reset-password'))) {
       setResetToken(resetTokenParam);
       setIsResetPasswordOpen(true);
       verifyResetToken(resetTokenParam);
