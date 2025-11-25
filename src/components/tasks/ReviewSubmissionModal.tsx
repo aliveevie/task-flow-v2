@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, RefreshCw, File, Download, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, File, Download, Loader2, Eye, X } from "lucide-react";
 import { toast } from "sonner";
 import { getBaseUrl } from "@/config/api";
 
@@ -32,6 +32,7 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
   const [status, setStatus] = useState<"approved" | "rejected" | "revision-requested">("approved");
   const [feedback, setFeedback] = useState("");
   const [isReviewing, setIsReviewing] = useState(false);
+  const [viewingFile, setViewingFile] = useState<{ url: string; name: string; type: string } | null>(null);
 
   useEffect(() => {
     if (submission) {
@@ -95,37 +96,73 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
     }
   };
 
-  const downloadFile = (fileUrl: string, fileName: string) => {
-    // Normalize file URL - handle malformed URLs
+  const normalizeFileUrl = (fileUrl: string): string => {
     let normalizedUrl = fileUrl.trim();
     
-    // If URL already starts with http:// or https://, use it as-is
-    if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
-      window.open(normalizedUrl, "_blank");
-      return;
-    }
-    
-    // Extract just the /uploads/... part from the URL
-    // Handle cases like: /.galaxyitt.com.ng/api/uploads/file.jpg or /api/uploads/file.jpg
     const uploadsMatch = normalizedUrl.match(/\/uploads\/[^\/]+.*$/);
     if (uploadsMatch) {
       normalizedUrl = uploadsMatch[0];
     } else if (!normalizedUrl.startsWith('/uploads')) {
-      // If no /uploads found, try to find the filename and construct the path
       const filenameMatch = normalizedUrl.match(/([^\/]+\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|txt|csv))$/i);
       if (filenameMatch) {
         normalizedUrl = `/uploads/${filenameMatch[1]}`;
       } else {
-        // Fallback: ensure it starts with /uploads
         normalizedUrl = normalizedUrl.startsWith('/') ? `/uploads${normalizedUrl}` : `/uploads/${normalizedUrl}`;
       }
     }
     
-    // Files are served by the API server
-    const baseUrl = getBaseUrl(); // Returns: https://api.galaxyitt.com.ng
-    const fullUrl = `${baseUrl}${normalizedUrl}`;
-    
-    window.open(fullUrl, "_blank");
+    return normalizedUrl;
+  };
+
+  const getFileType = (fileName: string): string => {
+    const ext = fileName.toLowerCase().split('.').pop() || '';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image';
+    if (['pdf'].includes(ext)) return 'pdf';
+    return 'other';
+  };
+
+  const viewFile = async (fileUrl: string, fileName: string) => {
+    try {
+      const normalizedUrl = normalizeFileUrl(fileUrl);
+      const baseUrl = getBaseUrl();
+      const fullUrl = `${baseUrl}${normalizedUrl}`;
+      const fileType = getFileType(fileName);
+      
+      setViewingFile({ url: fullUrl, name: fileName, type: fileType });
+    } catch (error) {
+      toast.error("Failed to load file");
+    }
+  };
+
+  const downloadFile = async (fileUrl: string, fileName: string) => {
+    try {
+      const normalizedUrl = normalizeFileUrl(fileUrl);
+      const baseUrl = getBaseUrl();
+      const fullUrl = `${baseUrl}${normalizedUrl}`;
+      
+      const token = localStorage.getItem("token");
+      const response = await fetch(fullUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download file');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      toast.error("Failed to download file");
+    }
   };
 
   if (!submission) return null;
@@ -273,6 +310,70 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
           </div>
         </div>
       </DialogContent>
+
+      {/* File Viewer Modal */}
+      {viewingFile && (
+        <Dialog open={!!viewingFile} onOpenChange={() => setViewingFile(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between">
+                <span>{viewingFile.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewingFile(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mt-4">
+              {viewingFile.type === 'image' ? (
+                <div className="flex items-center justify-center bg-muted rounded-lg p-4">
+                  <img
+                    src={viewingFile.url}
+                    alt={viewingFile.name}
+                    className="max-w-full max-h-[70vh] object-contain rounded"
+                    onError={() => {
+                      toast.error("Failed to load image");
+                      setViewingFile(null);
+                    }}
+                  />
+                </div>
+              ) : viewingFile.type === 'pdf' ? (
+                <div className="w-full h-[70vh] border rounded-lg">
+                  <iframe
+                    src={viewingFile.url}
+                    className="w-full h-full rounded-lg"
+                    title={viewingFile.name}
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <File className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-4">Preview not available for this file type</p>
+                  <Button onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Download to View
+                  </Button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+                <Button variant="outline" onClick={() => setViewingFile(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 };

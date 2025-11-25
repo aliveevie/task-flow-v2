@@ -3,9 +3,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, XCircle, RefreshCw, Clock, File, Download } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, Clock, File, Download, Eye, X } from "lucide-react";
 import { toast } from "sonner";
-import { getBaseUrl } from "@/config/api";
+import { getBaseUrl, API_URL } from "@/config/api";
 
 interface Submission {
   id: string;
@@ -30,6 +30,7 @@ interface ViewSubmissionFeedbackProps {
 const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh }: ViewSubmissionFeedbackProps) => {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingFile, setViewingFile] = useState<{ url: string; name: string; type: string } | null>(null);
 
   useEffect(() => {
     if (isOpen && taskId) {
@@ -41,7 +42,7 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const response = await fetch(`https://api.galaxyitt.com.ng/api/tasks/${taskId}/submissions`, {
+      const response = await fetch(`${API_URL}/tasks/${taskId}/submissions`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -75,37 +76,74 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
     }
   };
 
-  const downloadFile = (fileUrl: string, fileName: string) => {
-    // Normalize file URL - handle malformed URLs
+  const normalizeFileUrl = (fileUrl: string): string => {
     let normalizedUrl = fileUrl.trim();
     
-    // If URL already starts with http:// or https://, use it as-is
-    if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
-      window.open(normalizedUrl, "_blank");
-      return;
-    }
-    
     // Extract just the /uploads/... part from the URL
-    // Handle cases like: /.galaxyitt.com.ng/api/uploads/file.jpg or /api/uploads/file.jpg
     const uploadsMatch = normalizedUrl.match(/\/uploads\/[^\/]+.*$/);
     if (uploadsMatch) {
       normalizedUrl = uploadsMatch[0];
     } else if (!normalizedUrl.startsWith('/uploads')) {
-      // If no /uploads found, try to find the filename and construct the path
       const filenameMatch = normalizedUrl.match(/([^\/]+\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|txt|csv))$/i);
       if (filenameMatch) {
         normalizedUrl = `/uploads/${filenameMatch[1]}`;
       } else {
-        // Fallback: ensure it starts with /uploads
         normalizedUrl = normalizedUrl.startsWith('/') ? `/uploads${normalizedUrl}` : `/uploads/${normalizedUrl}`;
       }
     }
     
-    // Files are served by the API server
-    const baseUrl = getBaseUrl(); // Returns: https://api.galaxyitt.com.ng
-    const fullUrl = `${baseUrl}${normalizedUrl}`;
-    
-    window.open(fullUrl, "_blank");
+    return normalizedUrl;
+  };
+
+  const getFileType = (fileName: string): string => {
+    const ext = fileName.toLowerCase().split('.').pop() || '';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image';
+    if (['pdf'].includes(ext)) return 'pdf';
+    return 'other';
+  };
+
+  const viewFile = async (fileUrl: string, fileName: string) => {
+    try {
+      const normalizedUrl = normalizeFileUrl(fileUrl);
+      const baseUrl = getBaseUrl();
+      const fullUrl = `${baseUrl}${normalizedUrl}`;
+      const fileType = getFileType(fileName);
+      
+      setViewingFile({ url: fullUrl, name: fileName, type: fileType });
+    } catch (error) {
+      toast.error("Failed to load file");
+    }
+  };
+
+  const downloadFile = async (fileUrl: string, fileName: string) => {
+    try {
+      const normalizedUrl = normalizeFileUrl(fileUrl);
+      const baseUrl = getBaseUrl();
+      const fullUrl = `${baseUrl}${normalizedUrl}`;
+      
+      const token = localStorage.getItem("token");
+      const response = await fetch(fullUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download file');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      toast.error("Failed to download file");
+    }
   };
 
   const latestSubmission = submissions.length > 0 ? submissions[0] : null;
@@ -173,14 +211,24 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
                               <File className="w-4 h-4 text-muted-foreground" />
                               <span className="text-sm">{latestSubmission.file_names[index] || `File ${index + 1}`}</span>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => downloadFile(url, latestSubmission.file_names[index] || `file-${index + 1}`)}
-                            >
-                              <Download className="w-4 h-4 mr-1" />
-                              Download
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => viewFile(url, latestSubmission.file_names[index] || `file-${index + 1}`)}
+                              >
+                                <Eye className="w-4 h-4 mr-1" />
+                                View
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => downloadFile(url, latestSubmission.file_names[index] || `file-${index + 1}`)}
+                              >
+                                <Download className="w-4 h-4 mr-1" />
+                                Download
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -255,6 +303,70 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
           </Button>
         </div>
       </DialogContent>
+
+      {/* File Viewer Modal */}
+      {viewingFile && (
+        <Dialog open={!!viewingFile} onOpenChange={() => setViewingFile(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between">
+                <span>{viewingFile.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewingFile(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mt-4">
+              {viewingFile.type === 'image' ? (
+                <div className="flex items-center justify-center bg-muted rounded-lg p-4">
+                  <img
+                    src={viewingFile.url}
+                    alt={viewingFile.name}
+                    className="max-w-full max-h-[70vh] object-contain rounded"
+                    onError={() => {
+                      toast.error("Failed to load image");
+                      setViewingFile(null);
+                    }}
+                  />
+                </div>
+              ) : viewingFile.type === 'pdf' ? (
+                <div className="w-full h-[70vh] border rounded-lg">
+                  <iframe
+                    src={viewingFile.url}
+                    className="w-full h-full rounded-lg"
+                    title={viewingFile.name}
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <File className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-4">Preview not available for this file type</p>
+                  <Button onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Download to View
+                  </Button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => downloadFile(viewingFile.url.replace(getBaseUrl(), ''), viewingFile.name)}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+                <Button variant="outline" onClick={() => setViewingFile(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 };
