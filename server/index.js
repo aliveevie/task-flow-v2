@@ -1606,19 +1606,24 @@ app.post('/api/email/project-invite', async (req, res) => {
 // PROJECT ENDPOINTS
 // ============================================================
 
-// Get all projects
-app.get('/api/projects', async (req, res) => {
+// Get all projects (filtered by logged-in user)
+app.get('/api/projects', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
+    const userId = req.user.userId;
+    
+    // Get projects created by the user OR projects where the user is a member
     const result = await db.query(`
-      SELECT p.*, u.full_name as creator_name, u.email as creator_email
+      SELECT DISTINCT p.*, u.full_name as creator_name, u.email as creator_email
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
+      LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+      WHERE p.created_by = $1 OR pm.id IS NOT NULL
       ORDER BY p.created_at DESC
-    `);
+    `, [userId]);
 
     res.json({ success: true, data: result.rows });
   } catch (error) {
@@ -1673,23 +1678,27 @@ app.get('/api/projects/invited/:userId', async (req, res) => {
   }
 });
 
-// Get project by ID
-app.get('/api/projects/:id', async (req, res) => {
+// Get project by ID (check user access)
+app.get('/api/projects/:id', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
     const { id } = req.params;
+    const userId = req.user.userId;
+    
+    // Check if project exists and user has access (created by or is a member)
     const result = await db.query(`
-      SELECT p.*, u.full_name as creator_name, u.email as creator_email
+      SELECT DISTINCT p.*, u.full_name as creator_name, u.email as creator_email
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
-      WHERE p.id = $1
-    `, [id]);
+      LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+      WHERE p.id = $1 AND (p.created_by = $2 OR pm.id IS NOT NULL)
+    `, [id, userId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Project not found' });
+      return res.status(404).json({ success: false, error: 'Project not found or access denied' });
     }
 
     res.json({ success: true, data: result.rows[0] });
@@ -1786,14 +1795,28 @@ app.delete('/api/projects/:id', async (req, res) => {
 // TASK ENDPOINTS
 // ============================================================
 
-// Get all tasks for a project
-app.get('/api/projects/:projectId/tasks', async (req, res) => {
+// Get all tasks for a project (check user access)
+app.get('/api/projects/:projectId/tasks', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
     const { projectId } = req.params;
+    const userId = req.user.userId;
+    
+    // First check if user has access to this project
+    const projectCheck = await db.query(`
+      SELECT p.id
+      FROM projects p
+      LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+      WHERE p.id = $1 AND (p.created_by = $2 OR pm.id IS NOT NULL)
+    `, [projectId, userId]);
+    
+    if (projectCheck.rows.length === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to this project' });
+    }
+    
     const result = await db.query(`
       SELECT * FROM tasks WHERE project_id = $1 ORDER BY created_at DESC
     `, [projectId]);
@@ -1835,19 +1858,24 @@ app.get('/api/projects/:projectId/tasks/assigned', authenticateToken, async (req
   }
 });
 
-// Get all tasks
-app.get('/api/tasks', async (req, res) => {
+// Get all tasks (filtered by logged-in user's accessible projects)
+app.get('/api/tasks', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
+    const userId = req.user.userId;
+    
+    // Get tasks from projects created by the user OR projects where the user is a member
     const result = await db.query(`
-      SELECT t.*, p.title as project_title
+      SELECT DISTINCT t.*, p.title as project_title, p.created_by as project_creator_id
       FROM tasks t
       LEFT JOIN projects p ON t.project_id = p.id
+      LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $1
+      WHERE p.created_by = $1 OR pm.id IS NOT NULL
       ORDER BY t.created_at DESC
-    `);
+    `, [userId]);
 
     res.json({ success: true, data: result.rows });
   } catch (error) {
@@ -2775,13 +2803,19 @@ app.post('/api/invitations/:invitationId/resend', authenticateToken, async (req,
 // ============================================================
 
 // Get user notifications
-app.get('/api/notifications/:userId', async (req, res) => {
+app.get('/api/notifications/:userId', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
     const { userId } = req.params;
+    const loggedInUserId = req.user.userId;
+    
+    // Ensure users can only access their own notifications
+    if (parseInt(userId) !== loggedInUserId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     
     const result = await db.query(`
       SELECT * FROM notifications 
@@ -2852,13 +2886,27 @@ async function createNotification(user_id, type, title, message, metadata = {}) 
 // ============================================================
 
 // Get project members
-app.get('/api/projects/:projectId/members', async (req, res) => {
+app.get('/api/projects/:projectId/members', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
     const { projectId } = req.params;
+    const userId = req.user.userId;
+    
+    // Check if user has access to this project
+    const projectCheck = await db.query(`
+      SELECT p.id
+      FROM projects p
+      LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = $2
+      WHERE p.id = $1 AND (p.created_by = $2 OR pm.id IS NOT NULL)
+    `, [projectId, userId]);
+    
+    if (projectCheck.rows.length === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to this project' });
+    }
+    
     const result = await db.query(`
       SELECT pm.*, u.full_name, u.email, u.avatar_url, u.role
       FROM project_members pm
@@ -2873,16 +2921,18 @@ app.get('/api/projects/:projectId/members', async (req, res) => {
   }
 });
 
-// Get all users with their task counts and invitation status
+// Get all users with their task counts and invitation status (filtered by logged-in admin's projects)
 app.get('/api/users', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
   }
 
   try {
-    // Get all users with their task counts
+    const userId = req.user.userId;
+    
+    // Get users who are members of projects the logged-in admin created OR is a member of
     const result = await db.query(`
-      SELECT 
+      SELECT DISTINCT
         u.id,
         u.full_name as name,
         u.email,
@@ -2892,11 +2942,15 @@ app.get('/api/users', authenticateToken, async (req, res) => {
         COUNT(DISTINCT t.id) as tasks_count,
         COUNT(DISTINCT CASE WHEN pi.status = 'pending' THEN pi.id END) as pending_invites_count
       FROM users u
-      LEFT JOIN tasks t ON t.assigned_to = u.full_name
-      LEFT JOIN project_invitations pi ON pi.invitee_email = u.email AND pi.status = 'pending'
+      INNER JOIN project_members pm ON pm.user_id = u.id
+      INNER JOIN projects p ON p.id = pm.project_id
+      LEFT JOIN project_members admin_pm ON admin_pm.project_id = p.id AND admin_pm.user_id = $1
+      LEFT JOIN tasks t ON t.assigned_to = u.full_name AND t.project_id = p.id
+      LEFT JOIN project_invitations pi ON pi.invitee_email = u.email AND pi.status = 'pending' AND pi.project_id = p.id
+      WHERE p.created_by = $1 OR admin_pm.id IS NOT NULL
       GROUP BY u.id, u.full_name, u.email, u.role, u.is_active, u.is_email_verified
       ORDER BY u.created_at DESC
-    `);
+    `, [userId]);
 
     // Format the response
     const formattedUsers = result.rows.map((user) => ({
@@ -2916,7 +2970,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all users who have accepted invitations (are project members)
+// Get all users who have accepted invitations (are project members) - filtered by logged-in user's projects
 app.get('/api/users/project-members', authenticateToken, async (req, res) => {
   if (!dbConnected || !db) {
     return res.status(503).json({ success: false, error: 'Database not connected' });
@@ -2925,7 +2979,7 @@ app.get('/api/users/project-members', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    // Get all unique users who are members of any project (have accepted invitations)
+    // Get users who are members of projects the logged-in user created OR is a member of
     const result = await db.query(`
       SELECT DISTINCT
         u.id,
@@ -2934,9 +2988,12 @@ app.get('/api/users/project-members', authenticateToken, async (req, res) => {
         u.role
       FROM users u
       INNER JOIN project_members pm ON pm.user_id = u.id
+      INNER JOIN projects p ON p.id = pm.project_id
+      LEFT JOIN project_members admin_pm ON admin_pm.project_id = p.id AND admin_pm.user_id = $1
       WHERE u.is_email_verified = true
+        AND (p.created_by = $1 OR admin_pm.id IS NOT NULL)
       ORDER BY u.full_name ASC
-    `);
+    `, [userId]);
 
     res.json({ 
       success: true, 

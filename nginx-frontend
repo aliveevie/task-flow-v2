@@ -30,23 +30,49 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
+    # Custom error page that auto-refreshes
+    error_page 502 503 504 = @retry_backend;
+
     # Frontend proxy
     location / {
         proxy_pass http://10.1.1.205:8080;
         proxy_http_version 1.1;
+        
+        # Connection settings
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        
+        # Headers
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         
         # WebSocket support (for Vite HMR in dev mode)
         proxy_set_header Origin '';
+        
+        # Retry and error handling - more aggressive retries
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+        proxy_next_upstream_tries 5;
+        proxy_next_upstream_timeout 30s;
+        
+        # Don't cache
+        proxy_cache_bypass $http_upgrade;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
-
+    
+    # Retry location that auto-refreshes
+    location @retry_backend {
+        default_type text/html;
+        return 200 '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connecting...</title><meta http-equiv="refresh" content="2;url=$request_uri"><style>body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f5f5f5}.container{text-align:center;padding:2rem;background:white;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}.spinner{border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 1rem}@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}h1{color:#333;margin:0 0 0.5rem}p{color:#666;margin:0}</style></head><body><div class="container"><div class="spinner"></div><h1>Reconnecting...</h1><p>Please wait while we reconnect to the server</p></div><script>setTimeout(function(){window.location.reload()},2000)</script></body></html>';
+        add_header Content-Type text/html;
+    }
 }
 
