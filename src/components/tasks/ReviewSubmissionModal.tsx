@@ -96,9 +96,36 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
+    // Normalize file URL - handle malformed URLs
+    let normalizedUrl = fileUrl.trim();
+    
+    // If URL already starts with http:// or https://, use it as-is
+    if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
+      window.open(normalizedUrl, "_blank");
+      return;
+    }
+    
+    // Extract just the /uploads/... part from the URL
+    // Handle cases like: /.galaxyitt.com.ng/api/uploads/file.jpg or /api/uploads/file.jpg
+    const uploadsMatch = normalizedUrl.match(/\/uploads\/[^\/]+.*$/);
+    if (uploadsMatch) {
+      normalizedUrl = uploadsMatch[0];
+    } else if (!normalizedUrl.startsWith('/uploads')) {
+      // If no /uploads found, try to find the filename and construct the path
+      const filenameMatch = normalizedUrl.match(/([^\/]+\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|txt|csv))$/i);
+      if (filenameMatch) {
+        normalizedUrl = `/uploads/${filenameMatch[1]}`;
+      } else {
+        // Fallback: ensure it starts with /uploads
+        normalizedUrl = normalizedUrl.startsWith('/') ? `/uploads${normalizedUrl}` : `/uploads/${normalizedUrl}`;
+      }
+    }
+    
     // Files are served by the API server
-    const baseUrl = getBaseUrl();
-    window.open(`${baseUrl}${fileUrl}`, "_blank");
+    const baseUrl = getBaseUrl(); // Returns: https://api.galaxyitt.com.ng
+    const fullUrl = `${baseUrl}${normalizedUrl}`;
+    
+    window.open(fullUrl, "_blank");
   };
 
   if (!submission) return null;
