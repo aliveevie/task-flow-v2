@@ -681,7 +681,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
         <body style="font-family: Arial; text-align: center; padding: 50px;">
           <h1>❌ Invalid or Expired Link</h1>
           <p>This verification link is invalid or has already been used.</p>
-          <p><a href="http://api.galaxyitt.com.ng:3000/auth">Go to Login</a></p>
+          <p><a href="http://taskflow.galaxyitt.com.ng/auth">Go to Login</a></p>
         </body>
         </html>
       `);
@@ -699,7 +699,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
           <h1>⏰ Link Expired</h1>
           <p>This verification link has expired.</p>
           <p>Please request a new verification email.</p>
-          <p><a href="http://api.galaxyitt.com.ng:3000/auth">Go to Login</a></p>
+          <p><a href="http://taskflow.galaxyitt.com.ng/auth">Go to Login</a></p>
         </body>
         </html>
       `);
@@ -730,7 +730,7 @@ app.get('/api/auth/verify-email', async (req, res) => {
         await emailService.sendEmailVerifiedEmail({
           to: tokenData.email,
           userName: tokenData.full_name,
-          loginUrl: 'http://api.galaxyitt.com.ng:3000/auth'
+          loginUrl: 'http://taskflow.galaxyitt.com.ng/auth'
         });
       } catch (emailError) {
         console.error('Failed to send welcome email:', emailError);
@@ -1011,7 +1011,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     );
 
     // Send password reset email
-    const resetLink = `http://api.galaxyitt.com.ng:3000/auth/reset-password?token=${resetToken}`;
+    const resetLink = `http://taskflow.galaxyitt.com.ng/auth/reset-password?token=${resetToken}`;
     
     try {
       await emailService.sendPasswordResetEmail({
@@ -1452,7 +1452,7 @@ app.post('/api/email/welcome', async (req, res) => {
       to: email,
       userName: userName || 'User',
       userEmail: userEmail || email,
-      loginUrl: loginUrl || 'http://api.galaxyitt.com.ng:3000'
+      loginUrl: loginUrl || 'http://taskflow.galaxyitt.com.ng/auth'
     });
 
     res.json({
@@ -3291,7 +3291,7 @@ app.get('/api/invitations/accept', async (req, res) => {
         userName: user.full_name,
         userEmail: user.email,
         projectName: invitation.project_title,
-        projectUrl: `http://api.galaxyitt.com.ng:3000/admin/projects/${invitation.project_id}`
+        projectUrl: `http://taskflow.galaxyitt.com.ng/admin/projects/${invitation.project_id}`
       });
 
       // Welcome user to project
@@ -3300,7 +3300,7 @@ app.get('/api/invitations/accept', async (req, res) => {
         userName: user.full_name,
         projectName: invitation.project_title,
         inviterName: invitation.inviter_name,
-        dashboardUrl: 'http://api.galaxyitt.com.ng:3000/user'
+        dashboardUrl: 'http://taskflow.galaxyitt.com.ng/user'
       });
     }
 
@@ -3459,7 +3459,7 @@ app.get('/api/invitations/reject', async (req, res) => {
         adminName: invitation.inviter_name,
         userEmail: invitation.invitee_email,
         projectName: invitation.project_title,
-        projectUrl: `http://api.galaxyitt.com.ng:3000/admin/projects/${invitation.project_id}`
+        projectUrl: `http://taskflow.galaxyitt.com.ng/admin/projects/${invitation.project_id}`
       });
     }
 
