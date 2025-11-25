@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, XCircle, RefreshCw, Clock, File, Download } from "lucide-react";
 import { toast } from "sonner";
+import { getBaseUrl } from "@/config/api";
 
 interface Submission {
   id: string;
@@ -75,7 +76,9 @@ const ViewSubmissionFeedback = ({ isOpen, onClose, taskId, taskTitle, onRefresh 
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`https://taskflow.galaxyitt.com.ng${fileUrl}`, "_blank");
+    // Files are served by the API server
+    const baseUrl = getBaseUrl();
+    window.open(`${baseUrl}${fileUrl}`, "_blank");
   };
 
   const latestSubmission = submissions.length > 0 ? submissions[0] : null;

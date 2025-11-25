@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, RefreshCw, File, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getBaseUrl } from "@/config/api";
 
 interface Submission {
   id: string;
@@ -95,7 +96,9 @@ const ReviewSubmissionModal = ({ isOpen, onClose, submission, onSuccess }: Revie
   };
 
   const downloadFile = (fileUrl: string, fileName: string) => {
-    window.open(`https://taskflow.galaxyitt.com.ng${fileUrl}`, "_blank");
+    // Files are served by the API server
+    const baseUrl = getBaseUrl();
+    window.open(`${baseUrl}${fileUrl}`, "_blank");
   };
 
   if (!submission) return null;
